@@ -250,17 +250,20 @@ class MainWindow(QMainWindow):
             # connect shortcut cards
             if hasattr(self.dashboard_tab, 'shortcut_cards'):
                 for lbl, btn in self.dashboard_tab.shortcut_cards.items():
-                    # Suppliers & Customers -> customers page
-                    if lbl in ('Customers', 'Suppliers'):
-                        btn.clicked.connect(lambda _, t='customers': self.switch_page(t))
+                    # Suppliers -> go to Customers page and select Suppliers tab
+                    if lbl == 'Suppliers':
+                        btn.clicked.connect(lambda _, mw=self: (mw.switch_page('customers'), mw.customer_tabs.setCurrentIndex(1) if hasattr(mw, 'customer_tabs') else None))
+                    # Customers -> go to Customers page and select Customers tab
+                    elif lbl == 'Customers':
+                        btn.clicked.connect(lambda _, mw=self: (mw.switch_page('customers'), mw.customer_tabs.setCurrentIndex(0) if hasattr(mw, 'customer_tabs') else None))
                     # Categories and stock-related shortcuts -> inventory page
                     elif lbl in ('Categories', 'Stock IN Today'):
-                        btn.clicked.connect(lambda _, t='stock': self.switch_page(t))
+                        btn.clicked.connect(lambda _, mw=self: mw.switch_page('stock'))
                     else:
                         # fallback
-                        btn.clicked.connect(lambda _, t='stock': self.switch_page(t))
-        except Exception:
-            pass
+                        btn.clicked.connect(lambda _, mw=self: mw.switch_page('stock'))
+            except Exception:
+                pass
 
         # Ensure invoices table double-click also opens dialog (for admin)
         if self.invoices_admin_tab:
@@ -777,6 +780,8 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.customers_table)
 
         tabs.addTab(cust_tab, "العملاء")
+        # expose tabs for external switching
+        self.customer_tabs = tabs
 
         # --- Suppliers Tab ---
         sup_tab = QWidget()

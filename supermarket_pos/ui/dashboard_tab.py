@@ -375,12 +375,28 @@ class DashboardTab(QWidget):
         expired_count = sum(1 for r in expiry_rows if r.get("expiry_status") == "EXPIRED")
         near_count = sum(1 for r in expiry_rows if r.get("expiry_status") == "NEAR_EXPIRY")
         all_products = self.db.list_products()
-        in_stock = sum(1 for p in all_products if float(p.get("stock_qty", 0)) > 5)
+        # total stock quantity across all products (align with inventory total)
+        try:
+            total_stock_qty = sum(float(p.get("stock_qty", 0) or 0) for p in all_products)
+        except Exception:
+            total_stock_qty = 0
+        # count of products with low stock (<=5 and >0)
+        low_stock_count = sum(1 for p in all_products if 0 < float(p.get("stock_qty", 0) or 0) <= 5)
 
         self.low_stock_value.setText(str(near_count + expired_count))
-        self.inv_in_stock.setText(str(in_stock))
-        self.inv_low_stock.setText(str(near_count))
+        # show total quantity in stock (sum of stock_qty)
+        self.inv_in_stock.setText(str(int(total_stock_qty)))
+        # show number of low-stock product SKUs
+        self.inv_low_stock.setText(str(low_stock_count))
         self.inv_expired.setText(str(expired_count))
+
+        # update suppliers count on dashboard
+        try:
+            suppliers = self.db.list_suppliers()
+            if "Suppliers" in self.shortcut_labels:
+                self.shortcut_labels["Suppliers"].setText(str(len(suppliers)))
+        except Exception:
+            pass
 
         sales_rows = self.db.get_sales_report("2000-01-01", "2999-12-31")[:6]
         self.recent_sales_table.setRowCount(len(sales_rows))
