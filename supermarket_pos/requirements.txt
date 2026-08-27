@@ -1,0 +1,4 @@
+PyQt5>=5.15.10
+WeasyPrint>=61.2
+qrcode>=7.4.2
+Pillow>=10.3.0

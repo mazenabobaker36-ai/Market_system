@@ -58,6 +58,10 @@ class DashboardTab(QWidget):
         c1, self.products_value = self._stat_card(
             "📦", "إجمالي المنتجات", "0", "عرض المخزون ←", "products"
         )
+        c1.setCursor(Qt.PointingHandCursor)
+        # expose total products stat card so MainWindow can wire navigation
+        self.card_total_products = c1
+
         c2, self.sales_value = self._stat_card(
             "💵", "مبيعات اليوم", "0.00 $", "فاتورة", "sales"
         )
@@ -70,7 +74,11 @@ class DashboardTab(QWidget):
 
         # Improve contrast and readability for stat cards
         try:
-            c1.setStyleSheet('QFrame { background: #ffffff; border-radius: 12px; } QLabel { color: #1e293b; } QLabel#statValueLabel { color: #1e293b; }')
+            c1.setStyleSheet(
+                'QFrame { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; } '
+                'QFrame:hover { background: #f8fafc; border: 1.5px solid #3b82f6; } '
+                'QLabel { color: #1e293b; } QLabel#statValueLabel { color: #1e293b; }'
+            )
         except Exception:
             pass
         try:
@@ -375,20 +383,23 @@ class DashboardTab(QWidget):
         expired_count = sum(1 for r in expiry_rows if r.get("expiry_status") == "EXPIRED")
         near_count = sum(1 for r in expiry_rows if r.get("expiry_status") == "NEAR_EXPIRY")
         all_products = self.db.list_products()
-        # total stock quantity across all products (align with inventory total)
+        # Count unique available products with stock_qty > 0 (excluding 0 stock)
         try:
-            total_stock_qty = sum(float(p.get("stock_qty", 0) or 0) for p in all_products)
+            available_items_count = self.db.get_available_products_count()
         except Exception:
-            total_stock_qty = 0
+            available_items_count = sum(1 for p in all_products if float(p.get("stock_qty", 0) or 0) > 0)
+
         # count of products with low stock (<=5 and >0)
         low_stock_count = sum(1 for p in all_products if 0 < float(p.get("stock_qty", 0) or 0) <= 5)
+        # count of out of stock products (stock_qty == 0)
+        out_of_stock_count = sum(1 for p in all_products if float(p.get("stock_qty", 0) or 0) <= 0)
 
         self.low_stock_value.setText(str(near_count + expired_count))
-        # show total quantity in stock (sum of stock_qty)
-        self.inv_in_stock.setText(str(int(total_stock_qty)))
+        # show count of unique available items in stock (distinct active products where stock > 0)
+        self.inv_in_stock.setText(str(available_items_count))
         # show number of low-stock product SKUs
         self.inv_low_stock.setText(str(low_stock_count))
-        self.inv_expired.setText(str(expired_count))
+        self.inv_expired.setText(str(expired_count if expired_count > 0 else out_of_stock_count))
 
         # update suppliers count on dashboard
         try:
@@ -432,5 +443,13 @@ class DashboardTab(QWidget):
         customers = self.db.list_customers()
         if "Customers" in self.shortcut_labels:
             self.shortcut_labels["Customers"].setText(str(len(customers)))
+        if "Categories" in self.shortcut_labels:
+            try:
+                cats_count = summary.get("categories_count")
+                if cats_count is None:
+                    cats_count = len(self.db.list_categories())
+            except Exception:
+                cats_count = len(self.db.get_distinct_categories())
+            self.shortcut_labels["Categories"].setText(str(cats_count))
         if "Stock IN Today" in self.shortcut_labels:
             self.shortcut_labels["Stock IN Today"].setText(str(summary["products_count"]))

@@ -691,31 +691,62 @@ QLabel#qrPreview {
     padding: 12px;
 }
 
-/* POS product card */
-QFrame#quickProductCard {
-    background: #ffffff;
-    border: 1.5px solid #e8edf5;
-    border-radius: 10px;
+/* POS Product Cards */
+QFrame#squareProductCard {
+    background-color: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
 }
-QFrame#quickProductCard:hover {
-    border: 1.5px solid #93c5fd;
-    background: #fafcff;
+QFrame#squareProductCard:hover {
+    background-color: #f8fafc;
+    border: 1.5px solid #2563eb;
 }
-QLabel#quickProductName {
+QFrame#squareProductCard:pressed {
+    background-color: #eff6ff;
+    border: 1.5px solid #1d4ed8;
+}
+QLabel#squareCardTitle {
     font-weight: 700;
+    font-size: 14px;
     color: #0f172a;
-    font-size: 13px;
     background: transparent;
     border-radius: 0;
 }
-QLabel#stockBadge {
-    background: #fef3c7;
-    color: #b45309;
-    border: 1px solid #fde68a;
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 11px;
+QLabel#squareCardPrice {
+    font-weight: 800;
+    font-size: 12px;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 3px 6px;
+}
+QLabel#squareCardStockOk {
     font-weight: 700;
+    font-size: 11px;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 6px;
+    padding: 3px 6px;
+}
+QLabel#squareCardStockLow {
+    font-weight: 700;
+    font-size: 11px;
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 3px 6px;
+}
+QLabel#squareCardStockOut {
+    font-weight: 800;
+    font-size: 11px;
+    color: #dc2626;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    border-radius: 6px;
+    padding: 3px 6px;
 }
 QLabel#posHintLabel {
     color: #64748b;

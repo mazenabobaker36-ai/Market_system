@@ -1,6 +1,9 @@
-from PyQt5.QtCore import QDate, Qt
+import os
+from pathlib import Path
+from PyQt5.QtCore import QDate, QSize, Qt
 from datetime import datetime, date, timedelta
-from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QTextDocument
+from PyQt5.QtPrintSupport import QPrintDialog, QPrinter
 from PyQt5.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -15,6 +18,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QShortcut,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -27,11 +31,220 @@ from PyQt5.QtWidgets import (
     QTabWidget,
 )
 
+from ui.categories_tab import CategoriesTab
 from ui.dashboard_tab import DashboardTab
 from ui.invoices_admin_tab import InvoicesAdminTab
 from ui.stock_window import StockWindow
 from ui.user_admin_tab import UserAdminTab
 from utils.invoice_pdf import generate_invoice_pdf
+
+
+class SquareProductCard(QFrame):
+    """Redesigned and expanded Product Card widget for POS quick menu grid."""
+    def __init__(self, product: dict, on_click_callback, parent=None):
+        super().__init__(parent)
+        self.product = product
+        self.on_click_callback = on_click_callback
+        self.setMinimumSize(155, 172)
+        self.setObjectName("squareProductCard")
+        self.setAttribute(Qt.WA_Hover, True)
+        self._build_ui()
+
+    def _build_ui(self):
+        stock = float(self.product.get("stock_qty") or 0)
+        is_out = stock <= 0
+        self.setCursor(Qt.ForbiddenCursor if is_out else Qt.PointingHandCursor)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignCenter)
+
+        name = self.product.get("name") or "-"
+        price = float(self.product.get("default_price") or 0.0)
+        cat = (self.product.get("category") or "أخرى").strip() or "أخرى"
+        img_path = self.product.get("image_path")
+        barcode = self.product.get("barcode") or "-"
+
+        # --- Top: Thumbnail Image or Clean Default Placeholder Icon (Height: 80px) ---
+        self.icon_label = QLabel()
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setFixedHeight(80)
+        self.icon_label.setObjectName("squareCardImageContainer")
+        pixmap = self._get_card_pixmap(img_path, cat, width=138, height=76)
+        self.icon_label.setPixmap(pixmap)
+        layout.addWidget(self.icon_label, 0, Qt.AlignCenter)
+
+        # --- Middle: Product Name in bold, high-contrast text (font-size: 14px) ---
+        self.name_label = QLabel()
+        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setObjectName("squareCardTitle")
+        self.name_label.setWordWrap(True)
+        self.name_label.setText(name)
+        self.name_label.setToolTip(f"{name}\nالباركود: {barcode}\nالتصنيف: {cat}\nالسعر: {price:.2f} ج.م")
+        layout.addWidget(self.name_label, 1)
+
+        # --- Bottom: Price Badge & Stock Tag styled with distinct soft pill backgrounds ---
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(0, 0, 0, 0)
+        badge_row.setSpacing(6)
+
+        self.price_label = QLabel(f"{price:.2f} ج.م")
+        self.price_label.setObjectName("squareCardPrice")
+        self.price_label.setAlignment(Qt.AlignCenter)
+
+        if is_out:
+            self.stock_label = QLabel("نفد")
+            self.stock_label.setObjectName("squareCardStockOut")
+        elif stock <= 5:
+            self.stock_label = QLabel(f"{int(stock)} 📦")
+            self.stock_label.setObjectName("squareCardStockLow")
+        else:
+            self.stock_label = QLabel(f"{int(stock)} 📦")
+            self.stock_label.setObjectName("squareCardStockOk")
+
+        self.stock_label.setAlignment(Qt.AlignCenter)
+
+        badge_row.addWidget(self.price_label, 1)
+        badge_row.addWidget(self.stock_label, 1)
+        layout.addLayout(badge_row)
+
+        self._apply_card_style(is_out)
+
+    def _apply_card_style(self, is_out: bool):
+        if is_out:
+            self.setStyleSheet(
+                """
+                QFrame#squareProductCard {
+                    background-color: #fef2f2;
+                    border: 1.5px solid #fecaca;
+                    border-radius: 12px;
+                }
+                QLabel#squareCardTitle {
+                    font-weight: 700;
+                    font-size: 14px;
+                    color: #991b1b;
+                    background: transparent;
+                }
+                QLabel#squareCardPrice {
+                    font-weight: 800;
+                    font-size: 12px;
+                    color: #dc2626;
+                    background: #fee2e2;
+                    border: 1px solid #fca5a5;
+                    border-radius: 6px;
+                    padding: 3px 6px;
+                }
+                QLabel#squareCardStockOut {
+                    font-weight: 800;
+                    font-size: 11px;
+                    color: #dc2626;
+                    background: #fee2e2;
+                    border: 1px solid #fca5a5;
+                    border-radius: 6px;
+                    padding: 3px 6px;
+                }
+                """
+            )
+        else:
+            self.setStyleSheet(
+                """
+                QFrame#squareProductCard {
+                    background-color: #ffffff;
+                    border: 1.5px solid #e2e8f0;
+                    border-radius: 12px;
+                }
+                QFrame#squareProductCard:hover {
+                    background-color: #f8fafc;
+                    border: 1.5px solid #2563eb;
+                }
+                QFrame#squareProductCard:pressed {
+                    background-color: #eff6ff;
+                    border: 1.5px solid #1d4ed8;
+                }
+                QLabel#squareCardTitle {
+                    font-weight: 700;
+                    font-size: 14px;
+                    color: #0f172a;
+                    background: transparent;
+                }
+                QLabel#squareCardPrice {
+                    font-weight: 800;
+                    font-size: 12px;
+                    color: #1d4ed8;
+                    background: #eff6ff;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 6px;
+                    padding: 3px 6px;
+                }
+                QLabel#squareCardStockOk {
+                    font-weight: 700;
+                    font-size: 11px;
+                    color: #047857;
+                    background: #ecfdf5;
+                    border: 1px solid #a7f3d0;
+                    border-radius: 6px;
+                    padding: 3px 6px;
+                }
+                QLabel#squareCardStockLow {
+                    font-weight: 700;
+                    font-size: 11px;
+                    color: #b45309;
+                    background: #fffbeb;
+                    border: 1px solid #fde68a;
+                    border-radius: 6px;
+                    padding: 3px 6px;
+                }
+                """
+            )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            stock = float(self.product.get("stock_qty") or 0)
+            if stock <= 0:
+                return
+            if callable(self.on_click_callback):
+                self.on_click_callback(self.product)
+        super().mousePressEvent(event)
+
+    def _get_card_pixmap(self, image_path: Optional[str], category: str, width: int = 138, height: int = 76) -> QPixmap:
+        if image_path and os.path.isfile(image_path):
+            pm = QPixmap(image_path)
+            if not pm.isNull():
+                return pm.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        pm = QPixmap(width, height)
+        pm.fill(Qt.transparent)
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QBrush(QColor("#f1f5f9")))
+        painter.setPen(QColor("#e2e8f0"))
+        painter.drawRoundedRect(2, 2, width - 4, height - 4, 8, 8)
+
+        icons = {
+            "مشروبات": "🥤",
+            "Drinks": "🥤",
+            "أطعمة": "🍟",
+            "Food": "🍟",
+            "Snacks": "🍟",
+            "مخبوزات": "🥐",
+            "Bakery": "🥐",
+            "منظفات": "🧼",
+            "Cleaning": "🧼",
+            "ألبان": "🥛",
+            "Dairy": "🥛",
+            "حلويات": "🍫",
+            "Sweets": "🍫",
+            "إلكترونيات": "🔌",
+        }
+        emoji = icons.get(category, "📦")
+        font = painter.font()
+        font.setPointSize(28)
+        painter.setFont(font)
+        painter.setPen(QColor("#334155"))
+        painter.drawText(pm.rect(), Qt.AlignCenter, emoji)
+        painter.end()
+        return pm
 
 
 class MainWindow(QMainWindow):
@@ -43,7 +256,17 @@ class MainWindow(QMainWindow):
         self.current_product = None
         self.cart = []
 
-        self.user_role = (self.current_user.get("role") or "").strip().lower()
+        raw_role = (self.current_user.get("role") or "").strip().lower()
+        role_map = {
+            "owner": "owner",
+            "مالك": "owner",
+            "admin": "admin",
+            "مدير": "admin",
+            "saler": "saler",
+            "seller": "saler",
+            "بائع": "saler",
+        }
+        self.user_role = role_map.get(raw_role, raw_role)
         self.nav_buttons = {}
         self.sidebar_collapsed = False
 
@@ -55,11 +278,20 @@ class MainWindow(QMainWindow):
         role_display = role_display_map.get(self.user_role, current_user.get("role", "-"))
 
         self.setWindowTitle(f"نظام السوبرماركت - المستخدم: {current_user['username']} ({role_display})")
-        self.resize(1360, 860)
+        self.setMinimumSize(1024, 680)
+
+        # Keyboard shortcuts for Full Screen (F11) and Escape
+        self.f11_shortcut = QShortcut(QKeySequence(Qt.Key_F11), self)
+        self.f11_shortcut.activated.connect(self.toggle_full_screen)
+        self.esc_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self.esc_shortcut.activated.connect(self._exit_fullscreen_on_esc)
 
         self._build_shell()
         self._build_pages()
         self._apply_role_permissions()
+
+        # Launch window maximized by default for responsive screen support
+        self.showMaximized()
 
         # load customers/suppliers data
         try:
@@ -77,6 +309,41 @@ class MainWindow(QMainWindow):
             pass
 
         self.refresh_reports()
+
+    # ------------------------------------------------------------------
+    # Full Screen Toggle Handler (F11 / Button)
+    # ------------------------------------------------------------------
+    def toggle_full_screen(self):
+        """Toggle between maximized window mode and true full-screen mode (F11)."""
+        if self.isFullScreen():
+            self.showMaximized()
+            if hasattr(self, 'fullscreen_btn'):
+                self.fullscreen_btn.setText("⛶ ملء الشاشة (F11)")
+                self.fullscreen_btn.setToolTip("تفعيل وضع ملء الشاشة (F11)")
+        else:
+            self.showFullScreen()
+            if hasattr(self, 'fullscreen_btn'):
+                self.fullscreen_btn.setText("🗗 نافذة عادية (F11)")
+                self.fullscreen_btn.setToolTip("الخروج من ملء الشاشة (F11 أو Esc)")
+
+    def _exit_fullscreen_on_esc(self):
+        """Exit full-screen mode when Escape is pressed."""
+        if self.isFullScreen():
+            self.showMaximized()
+            if hasattr(self, 'fullscreen_btn'):
+                self.fullscreen_btn.setText("⛶ ملء الشاشة (F11)")
+                self.fullscreen_btn.setToolTip("تفعيل وضع ملء الشاشة (F11)")
+
+    def _on_categories_data_changed(self):
+        """Triggered when categories are added, modified, or deleted in CategoriesTab."""
+        try:
+            if hasattr(self, 'stock_tab') and hasattr(self.stock_tab, '_refresh_categories_combo'):
+                self.stock_tab._refresh_categories_combo()
+            self.load_products_side_panel()
+            if hasattr(self, 'dashboard_tab'):
+                self.dashboard_tab.refresh()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Shell / Sidebar
@@ -114,6 +381,14 @@ class MainWindow(QMainWindow):
         self.menu_container.setSpacing(6)
         sidebar_layout.addLayout(self.menu_container)
         sidebar_layout.addStretch()
+
+        # Full-screen toggle button
+        self.fullscreen_btn = QPushButton("⛶ ملء الشاشة (F11)")
+        self.fullscreen_btn.setObjectName("fullscreenToggleBtn")
+        self.fullscreen_btn.setProperty("variant", "outline")
+        self.fullscreen_btn.setToolTip("تبديل وضع ملء الشاشة (F11)")
+        self.fullscreen_btn.clicked.connect(self.toggle_full_screen)
+        sidebar_layout.addWidget(self.fullscreen_btn)
 
         self.profile_badge = QLabel(
             f"👤 {self.current_user.get('username', '-')}\n{self.current_user.get('role', '-')}"
@@ -155,6 +430,15 @@ class MainWindow(QMainWindow):
         self.nav_buttons[key] = {"button": btn, "index": index, "title": title}
 
     def switch_page(self, key: str):
+        # RBAC Check: User Management is reserved exclusively for System Owner
+        if key == "users" and self.user_role != "owner":
+            QMessageBox.warning(
+                self,
+                "صلاحية غير كافية",
+                "عذراً، هذه الصفحة مخصصة لمالك النظام فقط."
+            )
+            return
+
         if key not in self.nav_buttons:
             return
 
@@ -166,6 +450,12 @@ class MainWindow(QMainWindow):
         try:
             if key == 'pos':
                 self.load_products_side_panel()
+            elif key == 'categories' and hasattr(self, 'categories_tab'):
+                self.categories_tab.refresh_categories()
+            elif key == 'dashboard' and hasattr(self, 'dashboard_tab'):
+                self.dashboard_tab.refresh()
+            elif key == 'stock' and hasattr(self, 'stock_tab'):
+                self.stock_tab.refresh_table()
         except Exception:
             pass
 
@@ -199,6 +489,7 @@ class MainWindow(QMainWindow):
         self.dashboard_tab = DashboardTab(self.db)
         self.customer_tab = self._build_customer_tab()
         self.stock_tab = StockWindow(self.db, current_user_role=self.user_role)
+        self.categories_tab = CategoriesTab(self.db, current_user_role=self.user_role, on_categories_changed=self._on_categories_data_changed)
         self.reports_tab = self._build_reports_tab()
 
         self._add_nav_item("pos", "🧾 نقطة البيع", self.pos_tab)
@@ -213,6 +504,7 @@ class MainWindow(QMainWindow):
         self._add_nav_item("dashboard", "📊 لوحة التحكم", self.dashboard_tab)
         self._add_nav_item("customers", "👥 العملاء", self.customer_tab)
         self._add_nav_item("stock", "📦 المخزون", self.stock_tab)
+        self._add_nav_item("categories", "🏷️ الأقسام والفئات", self.categories_tab)
         self._add_nav_item("reports", "📈 التقارير", self.reports_tab)
 
         self.invoices_admin_tab = None
@@ -222,6 +514,8 @@ class MainWindow(QMainWindow):
             self.invoices_admin_tab = InvoicesAdminTab(self.db)
             self._add_nav_item("invoices", "👁️ الفواتير وسجل المبيعات", self.invoices_admin_tab)
 
+        # Restrict User Management exclusively to Owner
+        if self.user_role == "owner":
             self.user_admin_tab = UserAdminTab(self.db, self.current_user)
             self._add_nav_item("users", "🛡️ إدارة المستخدمين", self.user_admin_tab)
 
@@ -244,8 +538,10 @@ class MainWindow(QMainWindow):
             self.dashboard_tab.recent_sales_table.doubleClicked.connect(self._open_invoice_from_sales_table)
 
             # connect reports sales table double-click as well
-            if hasattr(self, 'sales_table'):
-                self.sales_table.doubleClicked.connect(self._open_invoice_from_sales_table)
+            # Total Products stat card -> Stock page navigation
+            if hasattr(self.dashboard_tab, "card_total_products"):
+                self.dashboard_tab.card_total_products.setCursor(Qt.PointingHandCursor)
+                self.dashboard_tab.card_total_products.mousePressEvent = lambda event: self.switch_page("stock")
 
             # connect shortcut cards
             if hasattr(self.dashboard_tab, 'shortcut_cards'):
@@ -256,14 +552,17 @@ class MainWindow(QMainWindow):
                     # Customers -> go to Customers page and select Customers tab
                     elif lbl == 'Customers':
                         btn.clicked.connect(lambda _, mw=self: (mw.switch_page('customers'), mw.customer_tabs.setCurrentIndex(0) if hasattr(mw, 'customer_tabs') else None))
-                    # Categories and stock-related shortcuts -> inventory page
-                    elif lbl in ('Categories', 'Stock IN Today'):
+                    # Categories shortcut -> navigate directly to Categories Management page
+                    elif lbl == 'Categories':
+                        btn.clicked.connect(lambda _, mw=self: mw.switch_page('categories'))
+                    # Stock IN Today -> stock page
+                    elif lbl == 'Stock IN Today':
                         btn.clicked.connect(lambda _, mw=self: mw.switch_page('stock'))
                     else:
                         # fallback
                         btn.clicked.connect(lambda _, mw=self: mw.switch_page('stock'))
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         # Ensure invoices table double-click also opens dialog (for admin)
         if self.invoices_admin_tab:
@@ -307,20 +606,39 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def _apply_role_permissions(self):
-        if self.user_role == "saler":
-            # Prevent saler from accessing dashboard and admin sections
+        """Configure sidebar navigation and access permissions based on role."""
+        if self.user_role in {"saler", "seller", "بائع"}:
+            # Saler role: Read-only access to Stock, full access to POS and Customers
             if "stock" in self.nav_buttons:
-                self.nav_buttons["stock"]["button"].setEnabled(False)
+                self.nav_buttons["stock"]["button"].setEnabled(True)
+                self.nav_buttons["stock"]["button"].setVisible(True)
             if "reports" in self.nav_buttons:
                 self.nav_buttons["reports"]["button"].setEnabled(False)
+                self.nav_buttons["reports"]["button"].setVisible(False)
             if "dashboard" in self.nav_buttons:
-                # hide dashboard from saler
                 self.nav_buttons["dashboard"]["button"].setVisible(False)
-            # default landing page for saler should be POS
+            if "invoices" in self.nav_buttons:
+                self.nav_buttons["invoices"]["button"].setVisible(False)
+            if "users" in self.nav_buttons:
+                self.nav_buttons["users"]["button"].setVisible(False)
+                self.nav_buttons["users"]["button"].setEnabled(False)
+            # Default landing page for Saler is POS
             try:
                 self.switch_page("pos")
             except Exception:
                 pass
+
+        elif self.user_role in {"admin", "مدير"}:
+            # Admin role: Full access except User Management
+            if "users" in self.nav_buttons:
+                self.nav_buttons["users"]["button"].setVisible(False)
+                self.nav_buttons["users"]["button"].setEnabled(False)
+
+        elif self.user_role in {"owner", "مالك"}:
+            # Owner role: Full unrestricted access
+            if "users" in self.nav_buttons:
+                self.nav_buttons["users"]["button"].setVisible(True)
+                self.nav_buttons["users"]["button"].setEnabled(True)
 
     # ------------------------------------------------------------------
     # Logout Handler
@@ -370,6 +688,7 @@ class MainWindow(QMainWindow):
     def _build_pos_tab(self):
         # Main POS container with a right-side product quick-selection panel
         root = QWidget()
+        root.setLayoutDirection(Qt.RightToLeft)
         root_layout = QHBoxLayout(root)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
@@ -388,22 +707,27 @@ class MainWindow(QMainWindow):
         self.barcode_input.returnPressed.connect(self.on_scan_barcode)
 
         self.product_label = QLabel("المنتج: -")
+        self.product_label.setStyleSheet("color: #334155; font-weight: 600;")
 
         self.qty_input = QLineEdit("1")
+        self.qty_input.setPlaceholderText("الكمية")
         self.price_input = QLineEdit()
         self.price_input.setPlaceholderText("السعر اليدوي")
+
+        # Step progression on Enter key:
+        self.qty_input.returnPressed.connect(lambda: self.price_input.setFocus())
         self.price_input.returnPressed.connect(self.add_item_to_cart)
 
         self.add_btn = QPushButton("إضافة للسلة")
         self.add_btn.setProperty("variant", "primary")
         self.add_btn.clicked.connect(self.add_item_to_cart)
 
-        scan_layout.addWidget(QLabel("QR/باركود:"), 0, 0)
+        scan_layout.addWidget(QLabel("QR / باركود (الخطوة 1):"), 0, 0)
         scan_layout.addWidget(self.barcode_input, 0, 1, 1, 3)
         scan_layout.addWidget(self.product_label, 1, 0, 1, 4)
-        scan_layout.addWidget(QLabel("الكمية:"), 2, 0)
+        scan_layout.addWidget(QLabel("الكمية (الخطوة 2):"), 2, 0)
         scan_layout.addWidget(self.qty_input, 2, 1)
-        scan_layout.addWidget(QLabel("السعر:"), 2, 2)
+        scan_layout.addWidget(QLabel("السعر (الخطوة 3):"), 2, 2)
         scan_layout.addWidget(self.price_input, 2, 3)
         scan_layout.addWidget(self.add_btn, 3, 0, 1, 4)
 
@@ -411,35 +735,41 @@ class MainWindow(QMainWindow):
         self.cart_table.setHorizontalHeaderLabels([
             "معرف المنتج",
             "الباركود",
-            "الاسم",
+            "اسم المنتج",
             "الكمية",
-            "السعر",
-            "الإجمالي",
+            "سعر الوحدة",
+            "الإجمالي الفرعي",
         ])
         self.cart_table.setAlternatingRowColors(True)
         self.cart_table.verticalHeader().setVisible(False)
-        # allow inline editing for price column; handle changes
         self.cart_table.itemChanged.connect(self._on_cart_item_changed)
 
-        payment_box = QGroupBox("الدفع")
+        # Payment Section with separate Subtotal, Discount/Adjustment, and Final Total
+        payment_box = QGroupBox("الدفع والفوترة")
         payment_layout = QFormLayout(payment_box)
 
         self.customer_combo = QComboBox()
-        self.total_label = QLabel("0.00")
+        self.subtotal_label = QLabel("0.00")
+        self.subtotal_label.setStyleSheet("font-weight: 700; color: #1e293b;")
+        self.total_label = self.subtotal_label  # alias for backward compatibility
 
-        # Editable final total (override / discount). Use QDoubleSpinBox for numeric entry.
+        self.discount_label = QLabel("0.00")
+        self.discount_label.setStyleSheet("font-weight: 700; color: #dc2626;")
+
+        # Editable final total (override / manual adjustment). Use QDoubleSpinBox for numeric entry.
         self.final_total_spin = QDoubleSpinBox()
+        self.final_price_input = self.final_total_spin  # alias
         self.final_total_spin.setPrefix("")
-        self.final_total_spin.setSuffix("")
+        self.final_total_spin.setSuffix(" ج.م")
         self.final_total_spin.setDecimals(2)
         self.final_total_spin.setMaximum(9999999.99)
         self.final_total_spin.setValue(0.00)
-        self.final_total_spin.setSingleStep(0.5)
+        self.final_total_spin.setSingleStep(1.0)
+        self.final_total_spin.setEnabled(False)  # Lock until cart has items
         self.final_total_spin.valueChanged.connect(self._on_final_total_changed)
         self._final_total_overridden = False
 
-        # Simplified payment flow: no paid/change inputs - finalizing sale uses final_total_spin
-        self.checkout_btn = QPushButton("إتمام البيع")
+        self.checkout_btn = QPushButton("إتمام البيع وحفظ الفاتورة")
         self.checkout_btn.setProperty("variant", "success")
         self.checkout_btn.clicked.connect(self.checkout)
 
@@ -448,8 +778,9 @@ class MainWindow(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_cart)
 
         payment_layout.addRow("العميل:", self.customer_combo)
-        payment_layout.addRow("الإجمالي (محسوب):", self.total_label)
-        payment_layout.addRow("الإجمالي النهائي:", self.final_total_spin)
+        payment_layout.addRow("المجموع الفرعي:", self.subtotal_label)
+        payment_layout.addRow("الخصم / التسوية:", self.discount_label)
+        payment_layout.addRow("الصافي النهائي:", self.final_total_spin)
 
         payment_actions = QHBoxLayout()
         payment_actions.addWidget(self.checkout_btn)
@@ -460,37 +791,53 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.cart_table)
         layout.addWidget(payment_box)
 
-        # Product side panel (right)
-        panel = QGroupBox("المنتجات")
+        # Product side panel (right) with Full Arabic Localization (RTL)
+        panel = QGroupBox("قائمة المنتجات السريعة")
+        panel.setLayoutDirection(Qt.RightToLeft)
+        panel.setMinimumWidth(380)
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(8, 8, 8, 8)
-        panel_layout.setSpacing(8)
+        panel_layout.setSpacing(10)
 
         self.product_search_input = QLineEdit()
-        self.product_search_input.setPlaceholderText("بحث عن منتج...")
+        self.product_search_input.setPlaceholderText("بحث عن منتج (بالاسم أو الباركود)...")
         self.product_search_input.textChanged.connect(lambda txt: self._filter_products_side(txt))
         panel_layout.addWidget(self.product_search_input)
 
-        # simple category pills
-        pills_row = QHBoxLayout()
-        self.category_buttons = {}
-        categories = ["All", "Drinks", "Snacks", "Bakery", "General"]
-        for cat in categories:
-            btn = QPushButton(cat)
-            btn.setCheckable(True)
-            if cat == "All":
-                btn.setChecked(True)
-            btn.clicked.connect(lambda checked, c=cat: self._filter_products_side(self.product_search_input.text(), category=c))
-            pills_row.addWidget(btn)
-            self.category_buttons[cat] = btn
-        panel_layout.addLayout(pills_row)
+        # Dynamic Category Filter Tabs / Pills in a scrollable horizontal container
+        self.category_scroll = QScrollArea()
+        self.category_scroll.setFixedHeight(46)
+        self.category_scroll.setWidgetResizable(True)
+        self.category_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.category_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.category_scroll.setFrameShape(QFrame.NoFrame)
+        self.category_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
+        self.category_pills_container = QWidget()
+        self.category_pills_container.setStyleSheet("background: transparent;")
+        self.category_pills_layout = QHBoxLayout(self.category_pills_container)
+        self.category_pills_layout.setContentsMargins(0, 0, 0, 0)
+        self.category_pills_layout.setSpacing(6)
+        self.category_pills_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.category_scroll.setWidget(self.category_pills_container)
+
+        panel_layout.addWidget(self.category_scroll)
+
+        self.category_buttons = {}
+        self.active_category = "الكل"
+
+        # Multi-column Clean Grid Area for Products
         self.products_scroll = QScrollArea()
         self.products_scroll.setWidgetResizable(True)
+        self.products_scroll.setFrameShape(QFrame.NoFrame)
+        self.products_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
         self.products_container = QWidget()
+        self.products_container.setStyleSheet("background: transparent;")
         self.products_layout = QGridLayout(self.products_container)
-        self.products_layout.setAlignment(Qt.AlignTop)
-        self.products_layout.setSpacing(8)
+        self.products_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        self.products_layout.setSpacing(12)
+        self.products_layout.setContentsMargins(4, 4, 4, 4)
         self.products_scroll.setWidget(self.products_container)
 
         panel_layout.addWidget(self.products_scroll)
@@ -508,30 +855,118 @@ class MainWindow(QMainWindow):
 
         return root
 
+    def _refresh_pos_category_pills(self):
+        """Dynamically generate category filter tabs/buttons based on categories present in the database."""
+        try:
+            db_cats = self.db.get_distinct_categories()
+        except Exception:
+            db_cats = ["مشروبات", "أطعمة", "مخبوزات", "منظفات", "أخرى"]
+
+        # Ensure 'الكل' is always the first tab
+        all_cats = ["الكل"] + [c for c in db_cats if c != "الكل"]
+
+        # Clear existing buttons
+        while self.category_pills_layout.count():
+            item = self.category_pills_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+
+        self.category_buttons = {}
+        if self.active_category not in all_cats:
+            self.active_category = "الكل"
+
+        for cat in all_cats:
+            btn = QPushButton(cat)
+            btn.setObjectName("categoryTabBtn")
+            btn.setCheckable(True)
+            btn.setChecked(cat == self.active_category)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, c=cat: self._on_category_pill_clicked(c))
+            self.category_pills_layout.addWidget(btn)
+            self.category_buttons[cat] = btn
+
+        self.category_pills_layout.addStretch()
+
+    def _on_category_pill_clicked(self, category: str):
+        """Handle category tab click: update active state and filter products grid."""
+        self.active_category = category
+        for c, btn in self.category_buttons.items():
+            btn.setChecked(c == category)
+        search_txt = self.product_search_input.text() if hasattr(self, "product_search_input") else ""
+        self._filter_products_side(search_txt, category)
+
     def load_products_side_panel(self):
-        # Load all products and render side panel (safe guard if DB error)
+        """Reload products from database and refresh dynamic category tabs and square cards grid."""
         try:
             products = self.db.list_products()
         except Exception:
             products = []
 
-        # Only show available products (stock > 0)
-        available = [p for p in products if float(p.get('stock_qty', 0)) > 0]
         self._all_products = products
-        self._render_products(available)
+        self._refresh_pos_category_pills()
+        search_txt = self.product_search_input.text() if hasattr(self, "product_search_input") else ""
+        self._filter_products_side(search_txt, getattr(self, "active_category", "الكل"))
 
     def _product_category(self, product: dict) -> str:
+        """Extract product category string with fallback heuristics."""
+        cat = (product.get("category") or "").strip()
+        if cat:
+            return cat
+
         name = (product.get("name") or "").lower()
-        if any(k in name for k in ("milk", "cola", "pepsi", "juice", "drink", "water")):
-            return "Drinks"
-        if any(k in name for k in ("bread", "bakery", "bun", "cake")):
-            return "Bakery"
-        if any(k in name for k in ("chips", "snack", "crisps", "cookie")):
-            return "Snacks"
-        return "General"
+        if any(k in name for k in ("عصير", "ماء", "مشروب", "كولا", "بيبسي", "حليب", "مياه", "شاي", "قهوة", "cola", "pepsi", "juice", "drink", "water", "milk", "tea", "coffee")):
+            return "مشروبات"
+        if any(k in name for k in ("خبز", "كيك", "فطائر", "معجنات", "توست", "كرواسون", "bread", "bakery", "bun", "cake", "toast")):
+            return "مخبوزات"
+        if any(k in name for k in ("شيبس", "بسكويت", "شوكولاتة", "سناك", "طعام", "أرز", "سكر", "زيت", "chips", "snack", "crisps", "cookie", "biscuit", "chocolate", "food", "rice", "oil")):
+            return "أطعمة"
+        if any(k in name for k in ("صابون", "مسحوق", "كلور", "منظف", "شامبو", "soap", "cleaner", "detergent", "shampoo")):
+            return "منظفات"
+        return "أخرى"
+
+    def _get_product_pixmap(self, image_path: Optional[str] = None, category: str = "أخرى", size: int = 56) -> QPixmap:
+        """Return product image pixmap or modern category fallback placeholder icon."""
+        if image_path and os.path.isfile(image_path):
+            pm = QPixmap(image_path)
+            if not pm.isNull():
+                return pm.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        # Fallback placeholder pixmap with category icon
+        pm = QPixmap(size, size)
+        pm.fill(QColor("#f8fafc"))
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Card border
+        painter.setPen(QColor("#e2e8f0"))
+        painter.drawRoundedRect(1, 1, size - 2, size - 2, 6, 6)
+
+        icons = {
+            "مشروبات": "🥤",
+            "Drinks": "🥤",
+            "مخبوزات": "🥐",
+            "Bakery": "🥐",
+            "أطعمة": "🍟",
+            "Food": "🍟",
+            "Snacks": "🍟",
+            "منظفات": "🧼",
+            "Cleaning": "🧼",
+            "ألبان": "🥛",
+            "حلويات": "🍫",
+        }
+        emoji = icons.get(category, "📦")
+        font = painter.font()
+        font.setPointSize(int(size * 0.42))
+        painter.setFont(font)
+        painter.setPen(QColor("#475569"))
+        painter.drawText(pm.rect(), Qt.AlignCenter, emoji)
+        painter.end()
+        return pm
 
     def _render_products(self, products: list):
-        # clear layout
+        """Render product cards in a clean responsive grid layout with explicit 12px spacing."""
         while self._products_layout.count():
             it = self._products_layout.takeAt(0)
             w = it.widget()
@@ -539,54 +974,53 @@ class MainWindow(QMainWindow):
                 w.setParent(None)
                 w.deleteLater()
 
-        cols = 2
+        if not products:
+            empty_box = QFrame()
+            empty_box.setStyleSheet("background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 24px;")
+            el = QVBoxLayout(empty_box)
+            empty_lbl = QLabel("لا توجد منتجات مطابقة لهذا التصنيف أو البحث 🔍")
+            empty_lbl.setStyleSheet("color: #64748b; font-size: 14px; font-weight: 700;")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            el.addWidget(empty_lbl)
+            self._products_layout.addWidget(empty_box, 0, 0, 1, 2)
+            return
+
+        viewport_w = self.products_scroll.viewport().width() if hasattr(self, "products_scroll") else 380
+        # Calculate columns adaptively: Card min-width ~155px + 12px spacing
+        cols = max(2, min(4, int((viewport_w - 8) / 175))) if viewport_w > 200 else 2
+
         for idx, p in enumerate(products):
             row = idx // cols
             col = idx % cols
-            name = p.get("name")
-            price = float(p.get("default_price") or 0.0)
-            stock = float(p.get("stock_qty") or 0)
+            card = SquareProductCard(p, on_click_callback=self._select_product)
+            self._products_layout.addWidget(card, row, col)
 
-            btn = QPushButton()
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setCheckable(False)
-            btn.setSizePolicy(btn.sizePolicy().Expanding, btn.sizePolicy().Fixed)
-            text = f"{name}\n{price:.2f} | المخزون: {int(stock)}"
-            btn.setText(text)
-            btn.setProperty("product_id", p.get("id"))
-            btn.setToolTip(name)
+    def _filter_products_side(self, text: str = "", category: Optional[str] = None):
+        """Filter product side panel items by active category tab and search query."""
+        if category is not None:
+            self.active_category = category
+        cat_filter = getattr(self, "active_category", "الكل")
 
-            if stock <= 0:
-                btn.setEnabled(False)
-                btn.setStyleSheet("background:#fff1f2; color:#7f1d1d;")
-                btn.setText(text + "\n(نفد المخزون)")
-            else:
-                # Open selection dialog instead of adding directly
-                btn.clicked.connect(lambda _, prod=p: self._select_product(prod))
-
-            self._products_layout.addWidget(btn, row, col)
-
-    def _filter_products_side(self, text: str = "", category: str = "All"):
         txt = (text or "").strip().lower()
         filtered = []
         for p in getattr(self, "_all_products", []):
             name = (p.get("name") or "").lower()
+            barcode = (p.get("barcode") or "").lower()
             cat = self._product_category(p)
-            if category and category != "All" and cat != category:
+            if cat_filter != "الكل" and cat != cat_filter:
                 continue
-            if txt and txt not in name and txt not in (p.get("barcode") or ""):
+            if txt and txt not in name and txt not in barcode and txt not in cat.lower():
                 continue
             filtered.append(p)
 
-        # update pill checked states
-        for c, btn in self.category_buttons.items():
-            btn.setChecked(c == category)
+        # update category button check states
+        for c, btn in getattr(self, "category_buttons", {}).items():
+            btn.setChecked(c == cat_filter)
 
         self._render_products(filtered)
 
     def _add_product_to_cart(self, product: dict):
-        """Legacy helper preserved for compatibility. Prefer using _select_product which shows the pre-add dialog."""
-        # keep behavior for programmatic adds
+        """Legacy helper preserved for compatibility. Prefer using _select_product which enforces the 3-step workflow."""
         if float(product.get("stock_qty", 0)) <= 0:
             QMessageBox.warning(self, "خارج المخزون", "المنتج غير متوفر حالياً")
             return
@@ -613,51 +1047,129 @@ class MainWindow(QMainWindow):
         self.refresh_cart()
 
     def _select_product(self, product: dict):
-        """Open a selection dialog allowing price/qty edit before adding to cart."""
+        """Open a standardized 3-step selection dialog:
+        1. Step 1 (QR/Barcode): Product & Barcode details + Image preview (Read-only)
+        2. Step 2 (Quantity): Initial focus with quick +/- controls
+        3. Step 3 (Unit Price): Price confirmation before adding to cart
+        """
         dlg = QDialog(self)
-        dlg.setWindowTitle("إضافة منتج")
+        dlg.setWindowTitle(f"إضافة منتج للسلة - {product.get('name', '')}")
+        dlg.setLayoutDirection(Qt.RightToLeft)
         dlg.setModal(True)
+        dlg.setMinimumWidth(460)
+
         layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
 
-        # Product info (read-only)
-        info_layout = QFormLayout()
-        info_layout.addRow(QLabel("المنتج:"), QLabel(product.get("name") or "-"))
-        info_layout.addRow(QLabel("الباركود:"), QLabel(product.get("barcode") or "-"))
-        layout.addLayout(info_layout)
+        # --- STEP 1: Product info, Barcode/QR, and Image Preview (Read-only) ---
+        step1_box = QGroupBox("🏷️ الخطوة 1: بيانات المنتج والباركود (QR / Barcode)")
+        step1_inner = QHBoxLayout(step1_box)
+        step1_inner.setSpacing(12)
 
-        # Price and quantity controls
-        control_layout = QHBoxLayout()
+        # Image thumbnail preview in Step 1
+        cat = self._product_category(product)
+        img_path = product.get("image_path")
+        pixmap = self._get_product_pixmap(img_path, category=cat, size=68)
+        img_lbl = QLabel()
+        img_lbl.setPixmap(pixmap)
+        img_lbl.setFixedSize(70, 70)
+        img_lbl.setAlignment(Qt.AlignCenter)
+        img_lbl.setStyleSheet("border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;")
+        step1_inner.addWidget(img_lbl)
+
+        step1_layout = QFormLayout()
+        step1_layout.setHorizontalSpacing(12)
+        step1_layout.setVerticalSpacing(6)
+
+        prod_name_lbl = QLabel(product.get("name") or "-")
+        prod_name_lbl.setStyleSheet("font-weight: 800; font-size: 14px; color: #0f172a;")
+
+        barcode_lbl = QLabel(product.get("barcode") or "-")
+        barcode_lbl.setStyleSheet("font-family: monospace; font-size: 13px; color: #475569; background: #f1f5f9; padding: 3px 8px; border-radius: 4px;")
+
+        stock_avail = float(product.get("stock_qty") or 0)
+        stock_lbl = QLabel(f"{int(stock_avail)} وحدة متاحة")
+        stock_lbl.setStyleSheet("color: #059669; font-weight: 700;")
+
+        step1_layout.addRow("المنتج:", prod_name_lbl)
+        step1_layout.addRow("الباركود / QR:", barcode_lbl)
+        step1_layout.addRow("المخزون المتاح:", stock_lbl)
+
+        step1_inner.addLayout(step1_layout, 1)
+        layout.addWidget(step1_box)
+
+        # --- STEP 2: Quantity with +/- Quick Adjustments ---
+        step2_box = QGroupBox("🔢 الخطوة 2: تحديد الكمية (Quantity)")
+        step2_layout = QVBoxLayout(step2_box)
+        step2_layout.setSpacing(8)
+
+        qty_control_layout = QHBoxLayout()
+        minus_btn = QPushButton("➖")
+        minus_btn.setFixedWidth(42)
+        minus_btn.setProperty("variant", "outline")
+
+        qty_spin = QSpinBox()
+        qty_spin.setMinimum(1)
+        qty_spin.setMaximum(max(1, int(stock_avail)))
+        qty_spin.setValue(1)
+        qty_spin.setStyleSheet("font-size: 15px; font-weight: bold; padding: 4px;")
+
+        plus_btn = QPushButton("➕")
+        plus_btn.setFixedWidth(42)
+        plus_btn.setProperty("variant", "outline")
+
+        qty_control_layout.addWidget(minus_btn)
+        qty_control_layout.addWidget(qty_spin, 1)
+        qty_control_layout.addWidget(plus_btn)
+        step2_layout.addLayout(qty_control_layout)
+        layout.addWidget(step2_box)
+
+        # --- STEP 3: Unit Price Modification & Confirmation ---
+        step3_box = QGroupBox("💰 الخطوة 3: سعر الوحدة والتأكيد (Unit Price)")
+        step3_layout = QFormLayout(step3_box)
+        step3_layout.setHorizontalSpacing(12)
+        step3_layout.setVerticalSpacing(8)
+
+        default_price = float(product.get("default_price") or 0.0)
         price_spin = QDoubleSpinBox()
         price_spin.setDecimals(2)
         price_spin.setMaximum(9999999.99)
-        price_spin.setValue(float(product.get("default_price") or 0.0))
-        qty_spin = QSpinBox()
-        qty_spin.setMinimum(1)
-        qty_spin.setMaximum(int(float(product.get("stock_qty") or 0)))
-        qty_spin.setValue(1)
-        control_layout.addWidget(QLabel("السعر:"))
-        control_layout.addWidget(price_spin)
-        control_layout.addWidget(QLabel("الكمية:"))
-        control_layout.addWidget(qty_spin)
-        layout.addLayout(control_layout)
+        price_spin.setValue(default_price)
+        price_spin.setSuffix(" ج.م")
+        price_spin.setStyleSheet("font-size: 15px; font-weight: bold; padding: 4px;")
 
-        # Subtotal display
-        subtotal_lbl = QLabel(f"{price_spin.value() * qty_spin.value():.2f}")
-        subtotal_lbl.setAlignment(Qt.AlignRight)
-        layout.addWidget(QLabel("المجموع:"))
-        layout.addWidget(subtotal_lbl)
+        subtotal_lbl = QLabel(f"{default_price:.2f} ج.م")
+        subtotal_lbl.setStyleSheet("font-size: 16px; font-weight: 900; color: #059669;")
 
+        step3_layout.addRow("سعر الوحدة:", price_spin)
+        step3_layout.addRow("الإجمالي الفرعي:", subtotal_lbl)
+        layout.addWidget(step3_box)
+
+        # Real-time subtotal calculation
         def _recalc():
-            subtotal_lbl.setText(f"{price_spin.value() * qty_spin.value():.2f}")
+            sub = price_spin.value() * qty_spin.value()
+            subtotal_lbl.setText(f"{sub:.2f} ج.م")
 
-        price_spin.valueChanged.connect(lambda _: _recalc())
         qty_spin.valueChanged.connect(lambda _: _recalc())
+        price_spin.valueChanged.connect(lambda _: _recalc())
+
+        minus_btn.clicked.connect(lambda: qty_spin.setValue(max(1, qty_spin.value() - 1)))
+        plus_btn.clicked.connect(lambda: qty_spin.setValue(min(int(stock_avail), qty_spin.value() + 1)))
+
+        # Sequential focus progression: Step 2 (Qty) -> Step 3 (Price) -> Add
+        qty_spin.editingFinished.connect(lambda: price_spin.setFocus())
 
         # Action buttons
         actions = QHBoxLayout()
-        add_btn = QPushButton("إضافة للفـاتورة")
+        add_btn = QPushButton("🛒 إضافة للسلة")
         add_btn.setProperty("variant", "success")
+        add_btn.setDefault(True)
+        add_btn.setStyleSheet("font-weight: 800; font-size: 14px; padding: 8px 16px;")
+
         cancel_btn = QPushButton("إلغاء")
+        cancel_btn.setProperty("variant", "outline")
+
         actions.addStretch()
         actions.addWidget(add_btn)
         actions.addWidget(cancel_btn)
@@ -666,7 +1178,6 @@ class MainWindow(QMainWindow):
         def _on_add():
             qty = int(qty_spin.value())
             price = float(price_spin.value())
-            stock_avail = float(product.get("stock_qty") or 0)
             if qty <= 0:
                 QMessageBox.warning(dlg, "خطأ", "الكمية يجب أن تكون أكبر من صفر")
                 return
@@ -674,34 +1185,33 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(dlg, "مخزون غير كافٍ", "الكمية المطلوبة أكبر من المتاح")
                 return
 
-            # merge with existing item if present
+            # merge with existing item if present or append new
             pid = product.get("id")
             for item in self.cart:
                 if item.get("product_id") == pid:
-                    # if prices differ, override with the new price
-                    if item.get("manual_price") != price:
-                        item["manual_price"] = price
+                    item["manual_price"] = price
                     item["qty"] += qty
                     self.refresh_cart()
                     dlg.accept()
                     return
 
-            # not present - add new entry
             self.cart.append({
                 "product_id": pid,
                 "barcode": product.get("barcode"),
                 "name": product.get("name"),
                 "qty": qty,
-                "base_price": float(product.get("default_price") or 0.0),
+                "base_price": default_price,
                 "manual_price": price,
             })
-            # reset any final total override
-            self._final_total_overridden = False
             self.refresh_cart()
             dlg.accept()
 
         add_btn.clicked.connect(_on_add)
         cancel_btn.clicked.connect(dlg.reject)
+
+        # Set initial focus directly to Step 2 (Quantity) for rapid entry
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(50, lambda: (qty_spin.setFocus(), qty_spin.selectAll()))
 
         dlg.exec_()
 
@@ -1019,29 +1529,31 @@ class MainWindow(QMainWindow):
 
         product = self.db.find_product_by_barcode(barcode)
         if not product:
-            QMessageBox.warning(self, "غير موجود", "لم يتم العثور على المنتج")
+            QMessageBox.warning(self, "غير موجود", "لم يتم العثور على المنتج بالباركود المدخل")
             self.barcode_input.selectAll()
             self.barcode_input.setFocus()
             return
 
         self.current_product = product
         self.product_label.setText(
-            f"المنتج: {product['name']} | متاح: {product['stock_qty']} | سعر افتراضي: {product['default_price']:.2f}"
+            f"المنتج: {product['name']} | متاح: {product['stock_qty']} | السعر: {product['default_price']:.2f} ج.م"
         )
-        self.price_input.setText(str(product["default_price"]))
-        self.price_input.setFocus()
-        self.price_input.selectAll()
+        self.price_input.setText(f"{float(product['default_price']):.2f}")
+        self.qty_input.setText("1")
+        # Step 2: focus on Quantity input directly
+        self.qty_input.setFocus()
+        self.qty_input.selectAll()
 
     def add_item_to_cart(self):
         if not self.current_product:
-            QMessageBox.warning(self, "تنبيه", "امسح المنتج أولاً")
+            QMessageBox.warning(self, "تنبيه", "يرجى مسح الباركود أو تحديد المنتج أولاً")
             return
 
         try:
             qty = float(self.qty_input.text().strip())
             price = float(self.price_input.text().strip())
         except ValueError:
-            QMessageBox.warning(self, "خطأ", "الكمية والسعر يجب أن يكونا رقماً")
+            QMessageBox.warning(self, "خطأ", "الكمية والسعر يجب أن يكونا رقمين صحيحين")
             return
 
         if qty <= 0 or price < 0:
@@ -1052,18 +1564,30 @@ class MainWindow(QMainWindow):
             item["qty"] for item in self.cart if item["product_id"] == self.current_product["id"]
         )
         if already_in_cart + qty > float(self.current_product["stock_qty"]):
-            QMessageBox.warning(self, "مخزون غير كافٍ", "الكمية المطلوبة أكبر من المتاح")
+            QMessageBox.warning(self, "مخزون غير كافٍ", "الكمية المطلوبة أكبر من المتاح في المخزن")
             return
 
-        self.cart.append(
-            {
-                "product_id": self.current_product["id"],
-                "barcode": self.current_product["barcode"],
-                "name": self.current_product["name"],
-                "qty": qty,
-                "manual_price": price,
-            }
-        )
+        pid = self.current_product["id"]
+        merged = False
+        for item in self.cart:
+            if item.get("product_id") == pid:
+                item["qty"] += qty
+                item["manual_price"] = price
+                merged = True
+                break
+
+        if not merged:
+            self.cart.append(
+                {
+                    "product_id": self.current_product["id"],
+                    "barcode": self.current_product["barcode"],
+                    "name": self.current_product["name"],
+                    "qty": qty,
+                    "base_price": float(self.current_product.get("default_price") or price),
+                    "manual_price": price,
+                }
+            )
+
         self.refresh_cart()
 
         self.barcode_input.clear()
@@ -1074,15 +1598,14 @@ class MainWindow(QMainWindow):
         self.barcode_input.setFocus()
 
     def refresh_cart(self):
-        # update cart table rows and totals
-        # block itemChanged while programmatically updating
+        # Update cart table rows and totals without altering individual unit prices
         self.cart_table.blockSignals(True)
         self.cart_table.setRowCount(len(self.cart))
-        total = 0.0
+        subtotal = 0.0
 
         for row, item in enumerate(self.cart):
-            subtotal = item["qty"] * item["manual_price"]
-            total += subtotal
+            row_subtotal = item["qty"] * item["manual_price"]
+            subtotal += row_subtotal
 
             self.cart_table.setItem(row, 0, QTableWidgetItem(str(item["product_id"])))
             self.cart_table.setItem(row, 1, QTableWidgetItem(item["barcode"]))
@@ -1096,58 +1619,286 @@ class MainWindow(QMainWindow):
             price_item.setFlags(price_item.flags() | Qt.ItemIsEditable)
             self.cart_table.setItem(row, 4, price_item)
 
-            subtotal_item = QTableWidgetItem(f"{subtotal:.2f}")
+            subtotal_item = QTableWidgetItem(f"{row_subtotal:.2f}")
             subtotal_item.setFlags(subtotal_item.flags() & ~Qt.ItemIsEditable)
             self.cart_table.setItem(row, 5, subtotal_item)
 
-        self.total_label.setText(f"{total:.2f}")
+        self.subtotal_label.setText(f"{subtotal:.2f}")
+
+        # Dynamically enable/disable final total price input based on cart contents
+        if hasattr(self, 'final_total_spin'):
+            has_items = len(self.cart) > 0
+            self.final_total_spin.setEnabled(has_items)
+            if not has_items:
+                self._final_total_overridden = False
+                self.final_total_spin.blockSignals(True)
+                self.final_total_spin.setValue(0.00)
+                self.final_total_spin.blockSignals(False)
+                if hasattr(self, 'discount_label'):
+                    self.discount_label.setText("0.00")
+            elif not getattr(self, '_final_total_overridden', False):
+                self.final_total_spin.blockSignals(True)
+                self.final_total_spin.setValue(subtotal)
+                self.final_total_spin.blockSignals(False)
+                if hasattr(self, 'discount_label'):
+                    self.discount_label.setText("0.00")
+            else:
+                final_val = float(self.final_total_spin.value())
+                adjustment = round(subtotal - final_val, 2)
+                if hasattr(self, 'discount_label'):
+                    self.discount_label.setText(f"{adjustment:.2f}")
+
         self.cart_table.resizeColumnsToContents()
         self.cart_table.blockSignals(False)
 
     def clear_cart(self):
         self.cart = []
+        self._final_total_overridden = False
         self.refresh_cart()
 
+    def _build_receipt_html(self, invoice: dict) -> str:
+        """Generate formatted 80mm standard thermal receipt HTML template (Store Header, Date, Invoice ID, Itemized Table, Totals, Footer)."""
+        items = invoice.get("items", [])
+        rows_html = []
+        for idx, it in enumerate(items, start=1):
+            name = it.get("name", "-")
+            qty = it.get("qty", 0)
+            price = float(it.get("manual_price", 0.0) or 0.0)
+            subtotal = float(it.get("subtotal", 0.0) or 0.0)
+            rows_html.append(
+                f"""
+                <tr>
+                    <td style="padding: 4px 2px; text-align: right; font-weight: bold;">{name}</td>
+                    <td style="padding: 4px 2px; text-align: center;">{qty}</td>
+                    <td style="padding: 4px 2px; text-align: center;">{price:.2f}</td>
+                    <td style="padding: 4px 2px; text-align: left; font-weight: bold;">{subtotal:.2f}</td>
+                </tr>
+                """
+            )
+        rows_str = "".join(rows_html)
+
+        subtotal_val = float(invoice.get("subtotal", 0.0) or 0.0)
+        discount_val = float(invoice.get("discount", 0.0) or 0.0)
+        total_val = float(invoice.get("total", 0.0) or 0.0)
+        paid_val = float(invoice.get("paid", 0.0) or 0.0)
+        change_val = float(invoice.get("change_amount", 0.0) or 0.0)
+        cashier_name = invoice.get("username") or "-"
+        customer_name = invoice.get("customer_name") or "عميل مباشر"
+        inv_no = invoice.get("invoice_no", "-")
+        created_at = invoice.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        html = f"""<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {{
+      font-family: 'Segoe UI', Tahoma, 'Tajawal', Arial, sans-serif;
+      font-size: 11px;
+      margin: 0;
+      padding: 6px;
+      color: #000;
+      line-height: 1.3;
+    }}
+    .receipt {{
+      max-width: 290px;
+      margin: 0 auto;
+      text-align: right;
+    }}
+    .header {{
+      text-align: center;
+      margin-bottom: 8px;
+    }}
+    .store-name {{
+      font-size: 16px;
+      font-weight: 900;
+      margin: 0 0 2px 0;
+    }}
+    .store-sub {{
+      font-size: 10px;
+      color: #333;
+      margin: 0 0 4px 0;
+    }}
+    .divider {{
+      border-top: 1px dashed #000;
+      margin: 6px 0;
+    }}
+    .meta-table {{
+      width: 100%;
+      font-size: 10px;
+      margin-bottom: 4px;
+    }}
+    .meta-table td {{
+      padding: 1px 0;
+    }}
+    table.items-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin: 4px 0;
+    }}
+    table.items-table th {{
+      border-bottom: 1px solid #000;
+      border-top: 1px solid #000;
+      padding: 3px 2px;
+      font-size: 10px;
+      font-weight: bold;
+    }}
+    .total-box {{
+      margin-top: 4px;
+      font-size: 11px;
+    }}
+    .footer {{
+      text-align: center;
+      font-size: 10px;
+      margin-top: 8px;
+    }}
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="header">
+      <div class="store-name">🛒 سوبرماركت الفتح</div>
+      <div class="store-sub">سجل تجاري: 1029384756 | هاتف: 01012345678</div>
+      <div class="store-sub">إيصال مبيعات إلكتروني</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <table class="meta-table">
+      <tr>
+        <td><strong>رقم الفاتورة:</strong> {inv_no}</td>
+      </tr>
+      <tr>
+        <td><strong>التاريخ:</strong> {created_at}</td>
+      </tr>
+      <tr>
+        <td><strong>الكاشير:</strong> {cashier_name} | <strong>العميل:</strong> {customer_name}</td>
+      </tr>
+    </table>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="text-align: right;">الصنف</th>
+          <th style="text-align: center; width: 28px;">الكمية</th>
+          <th style="text-align: center; width: 42px;">السعر</th>
+          <th style="text-align: left; width: 45px;">الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows_str}
+      </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <div class="total-box">
+      <table style="width: 100%; font-size: 11px;">
+        <tr>
+          <td>المجموع الفرعي:</td>
+          <td style="text-align: left;">{subtotal_val:.2f} ج.م</td>
+        </tr>
+        {f'<tr><td>الخصم / التسوية:</td><td style="text-align: left; color: red;">- {discount_val:.2f} ج.م</td></tr>' if discount_val > 0 else ''}
+        <tr style="font-weight: 900; font-size: 13px;">
+          <td style="border-top: 1px dashed #000; padding-top: 3px;">الصافي الإجمالي:</td>
+          <td style="border-top: 1px dashed #000; text-align: left; padding-top: 3px;">{total_val:.2f} ج.م</td>
+        </tr>
+        <tr>
+          <td>المدفوع:</td>
+          <td style="text-align: left;">{paid_val:.2f} ج.م</td>
+        </tr>
+        <tr>
+          <td>المتبقي:</td>
+          <td style="text-align: left;">{change_val:.2f} ج.م</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="footer">
+      <div style="font-weight: bold; margin-bottom: 2px;">شكراً لتسوقكم معنا! نتمنى لكم يوماً سعيداً</div>
+      <div style="color: #444; font-size: 9px;">البضاعة المباعة ترد وتستبدل خلال 14 يوماً بموجب الفاتورة</div>
+      <div style="color: #666; font-size: 8px; margin-top: 3px;">*** إيصال معتمد لنقاط البيع ***</div>
+    </div>
+  </div>
+</body>
+</html>
+"""
+        return html
+
+    def _print_receipt(self, invoice: dict, receipt_html: str):
+        """Trigger hardware receipt printing using QPrinter and QPrintDialog."""
+        try:
+            printer = QPrinter(QPrinter.HighResolution)
+            printer.setDocName(f"Receipt-{invoice.get('invoice_no', 'INV')}")
+
+            dialog = QPrintDialog(printer, self)
+            dialog.setWindowTitle(f"🖨️ طباعة إيصال الفاتورة - {invoice.get('invoice_no', '')}")
+            if dialog.exec_() == QDialog.Accepted:
+                document = QTextDocument()
+                document.setHtml(receipt_html)
+                document.print_(printer)
+        except Exception as pe:
+            print(f"Receipt printing notice: {pe}")
+
     def checkout(self):
+        """Payment completion handler: saves invoice, triggers direct receipt printing, and resets session."""
         if not self.cart:
-            QMessageBox.warning(self, "تنبيه", "السلة فارغة")
+            QMessageBox.warning(self, "تنبيه", "السلة فارغة، يرجى إضافة منتجات أولاً")
             return
 
-        # Simplified payment: use final_total_spin value as paid amount and adjust cart prices if overridden
-        computed_total = sum(item['qty'] * item['manual_price'] for item in self.cart)
-        # if final total overridden, adjust item manual_price proportionally
-        final_total = float(self.final_total_spin.value()) if hasattr(self, 'final_total_spin') else computed_total
-        if computed_total > 0 and abs(final_total - computed_total) > 0.001:
-            ratio = final_total / computed_total
-            for item in self.cart:
-                # apply ratio to base_price if present else current manual_price
-                base = float(item.get('base_price', item.get('manual_price', 0.0)))
-                item['manual_price'] = round(base * ratio, 2)
-        paid = final_total
-        change_amount = 0.0
+        computed_subtotal = sum(item['qty'] * item['manual_price'] for item in self.cart)
+        final_total = float(self.final_total_spin.value()) if hasattr(self, 'final_total_spin') else computed_subtotal
+        
+        # Calculate discount/adjustment while keeping individual unit prices intact
+        if getattr(self, '_final_total_overridden', False):
+            discount = round(computed_subtotal - final_total, 2)
+            total = final_total
+        else:
+            discount = 0.0
+            total = computed_subtotal
 
+        paid = total
         customer_id = self.customer_combo.currentData()
         if customer_id == -1:
             customer_id = None
 
         try:
-            invoice_id, invoice_no, total, change_amount = self.db.create_invoice(
+            # 1. Process transaction and save invoice to database
+            invoice_id, invoice_no, final_amt, change_amount = self.db.create_invoice(
                 items=self.cart,
                 paid=paid,
                 user_id=self.current_user["id"],
                 customer_id=customer_id,
+                discount=discount,
+                total=total,
             )
             invoice = self.db.get_invoice_details(invoice_id)
+            
+            # 2. Generate backup PDF in reports directory
             pdf_path = generate_invoice_pdf(invoice)
 
+            # 3. Generate HTML receipt template and trigger direct hardware printing
+            receipt_html = self._build_receipt_html(invoice)
+            self._print_receipt(invoice, receipt_html)
+
+            # 4. Confirmation message
             QMessageBox.information(
                 self,
-                "نجاح",
-                "تم تأكيد الدفع بنجاح",
+                "تمت العملية بنجاح",
+                f"✅ تم تأكيد البيع وإصدار الفاتورة رقم: {invoice_no}\n\n"
+                f"• الصافي: {final_amt:.2f} ج.م\n"
+                f"• المدفوع: {paid:.2f} ج.م\n"
+                f"• المتبقي: {change_amount:.2f} ج.م\n"
+                f"• نسخة PDF: {pdf_path}",
             )
 
-            # After successful invoice creation, reset POS session and refresh views
+            # 5. Reset/Refresh POS screen session for next customer
             self.reset_pos_session()
+
+            # 6. Refresh remaining dashboard, reports, stock, and invoice admin tabs
             try:
                 self.dashboard_tab.refresh()
             except Exception:
@@ -1159,68 +1910,47 @@ class MainWindow(QMainWindow):
                 pass
             if self.invoices_admin_tab:
                 self.invoices_admin_tab.refresh_invoices()
+
         except Exception as e:
-            QMessageBox.critical(self, "خطأ", str(e))
+            QMessageBox.critical(self, "خطأ أثناء إتمام الدفع", str(e))
 
     def _on_cart_item_changed(self, item):
         try:
             row = item.row()
             col = item.column()
-            # columns: 0 id,1 barcode,2 name,3 qty,4 price,5 subtotal
+            # col 4 is unit price
             if col == 4:
-                # price edited
-                text = item.text().strip()
-                text = text.replace(',', '.')
+                text = item.text().strip().replace(',', '.')
                 try:
                     val = float(text)
                 except ValueError:
                     QMessageBox.warning(self, "خطأ", "السعر يجب أن يكون رقمًا")
-                    # revert to model value
                     self.refresh_cart()
                     return
-                # update model
                 if 0 <= row < len(self.cart):
                     self.cart[row]['manual_price'] = val
-                    # update subtotal cell
-                    subtotal = self.cart[row]['qty'] * val
-                    self.cart_table.blockSignals(True)
-                    self.cart_table.setItem(row, 5, QTableWidgetItem(f"{subtotal:.2f}"))
-                    self.cart_table.blockSignals(False)
-                    # update totals
-                    total = sum(i['qty'] * i['manual_price'] for i in self.cart)
-                    self.total_label.setText(f"{total:.2f}")
-                    # editing an individual price clears any global final-total override
-                    try:
-                        self._final_total_overridden = False
-                        if hasattr(self, 'final_total_spin'):
-                            self.final_total_spin.blockSignals(True)
-                            self.final_total_spin.setValue(total)
-                            self.final_total_spin.blockSignals(False)
-                    except Exception:
-                        pass
+                    self.refresh_cart()
         except Exception:
             pass
 
     def _on_final_total_changed(self, value: float):
-        """Handler when cashier edits final total. Scale item prices proportionally to match new final total.
-        If final total equals computed total, clear override flag."""
+        """Handler when cashier manually edits the final total amount.
+        Keeps individual item prices strictly UNCHANGED and records difference as discount/adjustment."""
         try:
-            computed_total = sum(i['qty'] * i['manual_price'] for i in self.cart)
+            computed_subtotal = sum(i['qty'] * i['manual_price'] for i in self.cart)
             final_total = float(value)
-            if computed_total <= 0:
+            if len(self.cart) == 0:
                 return
-            if abs(final_total - computed_total) < 0.001:
-                # no override
+
+            if abs(final_total - computed_subtotal) < 0.001:
                 self._final_total_overridden = False
-                return
-            # apply proportional scaling based on base_price if available
-            ratio = final_total / computed_total
-            for item in self.cart:
-                base = float(item.get('base_price', item.get('manual_price', 0.0)))
-                item['manual_price'] = round(base * ratio, 2)
-            self._final_total_overridden = True
-            # refresh display
-            self.refresh_cart()
+                if hasattr(self, 'discount_label'):
+                    self.discount_label.setText("0.00")
+            else:
+                self._final_total_overridden = True
+                adjustment = round(computed_subtotal - final_total, 2)
+                if hasattr(self, 'discount_label'):
+                    self.discount_label.setText(f"{adjustment:.2f}")
         except Exception:
             pass
 
@@ -1228,17 +1958,31 @@ class MainWindow(QMainWindow):
         """Clear cart, reset totals and final total override, reload products, and focus barcode input."""
         try:
             self.cart = []
+            self._final_total_overridden = False
             self.refresh_cart()
         except Exception:
             pass
 
-        # reset final total spin
         try:
             if hasattr(self, 'final_total_spin'):
                 self._final_total_overridden = False
                 self.final_total_spin.blockSignals(True)
                 self.final_total_spin.setValue(0.00)
+                self.final_total_spin.setEnabled(False)
                 self.final_total_spin.blockSignals(False)
+            if hasattr(self, 'discount_label'):
+                self.discount_label.setText("0.00")
+        except Exception:
+            pass
+
+        try:
+            self.load_products_side_panel()
+        except Exception:
+            pass
+
+        try:
+            self.barcode_input.setFocus()
+            self.barcode_input.selectAll()
         except Exception:
             pass
 
