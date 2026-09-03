@@ -755,6 +755,26 @@ QLabel#posHintLabel {
     border-radius: 0;
 }
 
+/* POS Receipt Mode Toggle Switch */
+QCheckBox#receiptModeToggle {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+    padding: 6px 12px;
+    background-color: #f1f5f9;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+}
+QCheckBox#receiptModeToggle:hover {
+    background-color: #e2e8f0;
+    border-color: #94a3b8;
+}
+QCheckBox#receiptModeToggle:checked {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1.5px solid #93c5fd;
+}
+
 /* Invoice dark header */
 QFrame#invoiceDarkHeader {
     background: #1e293b;

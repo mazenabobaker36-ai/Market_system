@@ -4,10 +4,7 @@ from typing import Dict
 from weasyprint import HTML
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-TEMPLATE_PATH = BASE_DIR / "assets" / "invoice_template.html"
-REPORTS_DIR = BASE_DIR / "reports"
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+from utils.paths import APP_DIR, REPORTS_DIR, TEMPLATE_PATH
 
 
 def _rows_html(invoice: Dict) -> str:
@@ -48,5 +45,5 @@ def generate_invoice_pdf(invoice: Dict) -> str:
         html_text = html_text.replace(key, value)
 
     output_file = REPORTS_DIR / f"{invoice['invoice_no']}.pdf"
-    HTML(string=html_text, base_url=str(BASE_DIR)).write_pdf(str(output_file))
+    HTML(string=html_text, base_url=str(APP_DIR)).write_pdf(str(output_file))
     return str(output_file)

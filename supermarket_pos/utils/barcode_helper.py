@@ -5,9 +5,7 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-LABELS_DIR = BASE_DIR / "assets" / "labels"
-LABELS_DIR.mkdir(parents=True, exist_ok=True)
+from utils.paths import LABELS_DIR
 
 
 def generate_qr_image(data: str, filename: Optional[str] = None) -> str:

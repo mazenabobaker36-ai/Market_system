@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtCore import Qt, QUrl, QSizeF
 from PyQt5.QtGui import QTextDocument, QDesktopServices, QFont
-from PyQt5.QtPrintSupport import QPrintDialog, QPrinter
+from PyQt5.QtPrintSupport import QPrintDialog, QPrinter, QPrinterInfo
 from PyQt5.QtWidgets import (
     QDialog,
     QFrame,
@@ -442,14 +442,31 @@ class InvoiceViewDialog(QDialog):
         """
 
     def print_invoice(self):
-        printer = QPrinter(QPrinter.HighResolution)
-        dialog = QPrintDialog(printer, self)
-        if dialog.exec_() != QDialog.Accepted:
-            return
+        try:
+            default_printer_info = QPrinterInfo.defaultPrinter()
+            if not default_printer_info.isNull():
+                printer = QPrinter(default_printer_info, QPrinter.HighResolution)
+            else:
+                available = QPrinterInfo.availablePrinters()
+                if available:
+                    printer = QPrinter(available[0], QPrinter.HighResolution)
+                else:
+                    printer = QPrinter(QPrinter.HighResolution)
 
-        document = QTextDocument()
-        document.setHtml(self._render_html())
-        document.print_(printer)
+            printer.setDocName(f"Invoice-{self.invoice_data.get('invoice_no', 'INV')}")
+            printer.setFullPage(True)
+            printer.setPaperSize(QSizeF(80, 297), QPrinter.Millimeter)
+            printer.setPageMargins(0, 0, 0, 0, QPrinter.Millimeter)
+
+            document = QTextDocument()
+            page_width = printer.pageRect(QPrinter.Point).width()
+            if page_width > 0:
+                document.setTextWidth(page_width)
+            document.setHtml(self._render_html())
+            document.print_(printer)
+            QMessageBox.information(self, "طباعة الفاتورة", "تم إرسال الفاتورة للطباعة مباشرة 🖨️")
+        except Exception as e:
+            QMessageBox.critical(self, "خطأ في الطباعة", str(e))
 
     def download_pdf(self):
         try:

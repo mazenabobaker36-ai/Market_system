@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
-from PyQt5.QtCore import QDate, QSize, Qt
+from PyQt5.QtCore import QDate, QSize, QSizeF, Qt
 from datetime import datetime, date, timedelta
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QTextDocument
-from PyQt5.QtPrintSupport import QPrintDialog, QPrinter
+from PyQt5.QtPrintSupport import QPrintDialog, QPrinter, QPrinterInfo
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QFormLayout,
@@ -337,8 +338,11 @@ class MainWindow(QMainWindow):
     def _on_categories_data_changed(self):
         """Triggered when categories are added, modified, or deleted in CategoriesTab."""
         try:
-            if hasattr(self, 'stock_tab') and hasattr(self.stock_tab, '_refresh_categories_combo'):
-                self.stock_tab._refresh_categories_combo()
+            if hasattr(self, 'stock_tab'):
+                if hasattr(self.stock_tab, 'populate_category_dropdown'):
+                    self.stock_tab.populate_category_dropdown()
+                elif hasattr(self.stock_tab, '_refresh_categories_combo'):
+                    self.stock_tab._refresh_categories_combo()
             self.load_products_side_panel()
             if hasattr(self, 'dashboard_tab'):
                 self.dashboard_tab.refresh()
@@ -769,7 +773,14 @@ class MainWindow(QMainWindow):
         self.final_total_spin.valueChanged.connect(self._on_final_total_changed)
         self._final_total_overridden = False
 
-        self.checkout_btn = QPushButton("إتمام البيع وحفظ الفاتورة")
+        # Receipt Mode Toggle Switch ("وضع الفاتورة / بدون فاتورة")
+        self.receipt_toggle = QCheckBox("🖨️ وضع الفاتورة (طباعة تلقائية)")
+        self.receipt_toggle.setChecked(True)
+        self.receipt_toggle.setObjectName("receiptModeToggle")
+        self.receipt_toggle.setCursor(Qt.PointingHandCursor)
+        self.receipt_toggle.toggled.connect(self._on_receipt_toggle_changed)
+
+        self.checkout_btn = QPushButton("إتمام البيع + طباعة الإيصال 🖨️")
         self.checkout_btn.setProperty("variant", "success")
         self.checkout_btn.clicked.connect(self.checkout)
 
@@ -781,6 +792,7 @@ class MainWindow(QMainWindow):
         payment_layout.addRow("المجموع الفرعي:", self.subtotal_label)
         payment_layout.addRow("الخصم / التسوية:", self.discount_label)
         payment_layout.addRow("الصافي النهائي:", self.final_total_spin)
+        payment_layout.addRow("خيارات الطباعة:", self.receipt_toggle)
 
         payment_actions = QHBoxLayout()
         payment_actions.addWidget(self.checkout_btn)
@@ -1656,8 +1668,19 @@ class MainWindow(QMainWindow):
         self._final_total_overridden = False
         self.refresh_cart()
 
+    def _on_receipt_toggle_changed(self, checked: bool):
+        """Handle receipt mode toggle switch: updates button label and tooltips."""
+        if checked:
+            self.receipt_toggle.setText("🖨️ وضع الفاتورة (طباعة تلقائية)")
+            self.receipt_toggle.setToolTip("سيتم حفظ العملية وإرسال إيصال الفاتورة للطباعة فوراً")
+            self.checkout_btn.setText("إتمام البيع + طباعة الإيصال 🖨️")
+        else:
+            self.receipt_toggle.setText("🚫 بدون فاتورة (حفظ فقط)")
+            self.receipt_toggle.setToolTip("سيتم حفظ العملية في المخزون وقاعدة البيانات بدون طباعة إيصال")
+            self.checkout_btn.setText("إتمام البيع (حفظ فقط) 💾")
+
     def _build_receipt_html(self, invoice: dict) -> str:
-        """Generate formatted 80mm standard thermal receipt HTML template (Store Header, Date, Invoice ID, Itemized Table, Totals, Footer)."""
+        """Generate full-width 80mm thermal receipt HTML template with edge-to-edge page scaling."""
         items = invoice.get("items", [])
         rows_html = []
         for idx, it in enumerate(items, start=1):
@@ -1692,22 +1715,30 @@ class MainWindow(QMainWindow):
 <head>
   <meta charset="UTF-8">
   <style>
-    body {{
-      font-family: 'Segoe UI', Tahoma, 'Tajawal', Arial, sans-serif;
-      font-size: 11px;
+    @page {{
       margin: 0;
-      padding: 6px;
-      color: #000;
-      line-height: 1.3;
+      size: auto;
+    }}
+    body {{
+      width: 100%;
+      margin: 0;
+      padding: 4px;
+      font-family: 'Segoe UI', Tahoma, 'Tajawal', Arial, sans-serif;
+      font-size: 12px;
+      color: #000000;
+      line-height: 1.35;
+      background: #ffffff;
     }}
     .receipt {{
-      max-width: 290px;
-      margin: 0 auto;
+      width: 100%;
+      margin: 0;
+      padding: 0;
       text-align: right;
+      box-sizing: border-box;
     }}
     .header {{
       text-align: center;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }}
     .store-name {{
       font-size: 16px;
@@ -1716,37 +1747,42 @@ class MainWindow(QMainWindow):
     }}
     .store-sub {{
       font-size: 10px;
-      color: #333;
-      margin: 0 0 4px 0;
+      color: #222;
+      margin: 0 0 2px 0;
     }}
     .divider {{
-      border-top: 1px dashed #000;
-      margin: 6px 0;
+      border-top: 1px dashed #000000;
+      margin: 5px 0;
     }}
-    .meta-table {{
+    table {{
       width: 100%;
-      font-size: 10px;
-      margin-bottom: 4px;
+      border-collapse: collapse;
     }}
     .meta-table td {{
+      font-size: 11px;
       padding: 1px 0;
     }}
     table.items-table {{
       width: 100%;
-      border-collapse: collapse;
-      font-size: 10px;
       margin: 4px 0;
     }}
     table.items-table th {{
-      border-bottom: 1px solid #000;
-      border-top: 1px solid #000;
-      padding: 3px 2px;
-      font-size: 10px;
+      border-bottom: 1px solid #000000;
+      border-top: 1px solid #000000;
+      padding: 4px 2px;
+      font-size: 11px;
       font-weight: bold;
+    }}
+    table.items-table td {{
+      padding: 4px 2px;
+      font-size: 11px;
     }}
     .total-box {{
       margin-top: 4px;
-      font-size: 11px;
+    }}
+    .total-box td {{
+      padding: 2px 0;
+      font-size: 12px;
     }}
     .footer {{
       text-align: center;
@@ -1760,7 +1796,7 @@ class MainWindow(QMainWindow):
     <div class="header">
       <div class="store-name">🛒 سوبرماركت الفتح</div>
       <div class="store-sub">سجل تجاري: 1029384756 | هاتف: 01012345678</div>
-      <div class="store-sub">إيصال مبيعات إلكتروني</div>
+      <div class="store-sub">إيصال مبيعات إلكتروني معتمد</div>
     </div>
 
     <div class="divider"></div>
@@ -1777,13 +1813,15 @@ class MainWindow(QMainWindow):
       </tr>
     </table>
 
+    <div class="divider"></div>
+
     <table class="items-table">
       <thead>
         <tr>
-          <th style="text-align: right;">الصنف</th>
-          <th style="text-align: center; width: 28px;">الكمية</th>
-          <th style="text-align: center; width: 42px;">السعر</th>
-          <th style="text-align: left; width: 45px;">الإجمالي</th>
+          <th style="text-align: right; width: 45%;">الصنف</th>
+          <th style="text-align: center; width: 15%;">الكمية</th>
+          <th style="text-align: center; width: 20%;">السعر</th>
+          <th style="text-align: left; width: 20%;">الإجمالي</th>
         </tr>
       </thead>
       <tbody>
@@ -1794,15 +1832,15 @@ class MainWindow(QMainWindow):
     <div class="divider"></div>
 
     <div class="total-box">
-      <table style="width: 100%; font-size: 11px;">
+      <table>
         <tr>
           <td>المجموع الفرعي:</td>
           <td style="text-align: left;">{subtotal_val:.2f} ج.م</td>
         </tr>
         {f'<tr><td>الخصم / التسوية:</td><td style="text-align: left; color: red;">- {discount_val:.2f} ج.م</td></tr>' if discount_val > 0 else ''}
         <tr style="font-weight: 900; font-size: 13px;">
-          <td style="border-top: 1px dashed #000; padding-top: 3px;">الصافي الإجمالي:</td>
-          <td style="border-top: 1px dashed #000; text-align: left; padding-top: 3px;">{total_val:.2f} ج.م</td>
+          <td style="border-top: 1px dashed #000000; padding-top: 3px;">الصافي الإجمالي:</td>
+          <td style="border-top: 1px dashed #000000; text-align: left; padding-top: 3px;">{total_val:.2f} ج.م</td>
         </tr>
         <tr>
           <td>المدفوع:</td>
@@ -1828,20 +1866,49 @@ class MainWindow(QMainWindow):
 """
         return html
 
-    def _print_receipt(self, invoice: dict, receipt_html: str):
-        """Trigger hardware receipt printing using QPrinter and QPrintDialog."""
+    def print_receipt_directly(self, invoice_or_html, receipt_html: str = None):
+        """Direct silent printing to default system printer without opening QPrintDialog.
+        Bypasses system print dialog, sets zero page margins and 80mm thermal receipt size,
+        and scales document text width edge-to-edge across thermal paper.
+        """
         try:
-            printer = QPrinter(QPrinter.HighResolution)
-            printer.setDocName(f"Receipt-{invoice.get('invoice_no', 'INV')}")
+            if isinstance(invoice_or_html, dict):
+                invoice = invoice_or_html
+                html_content = receipt_html if receipt_html is not None else self._build_receipt_html(invoice)
+                doc_name = f"Receipt-{invoice.get('invoice_no', 'INV')}"
+            else:
+                html_content = str(invoice_or_html)
+                doc_name = "Thermal-Receipt"
 
-            dialog = QPrintDialog(printer, self)
-            dialog.setWindowTitle(f"🖨️ طباعة إيصال الفاتورة - {invoice.get('invoice_no', '')}")
-            if dialog.exec_() == QDialog.Accepted:
-                document = QTextDocument()
-                document.setHtml(receipt_html)
-                document.print_(printer)
+            default_printer_info = QPrinterInfo.defaultPrinter()
+            if not default_printer_info.isNull():
+                printer = QPrinter(default_printer_info, QPrinter.HighResolution)
+            else:
+                available = QPrinterInfo.availablePrinters()
+                if available:
+                    printer = QPrinter(available[0], QPrinter.HighResolution)
+                else:
+                    printer = QPrinter(QPrinter.HighResolution)
+
+            printer.setDocName(doc_name)
+            printer.setFullPage(True)
+            # Set 80mm thermal receipt dimensions with zero margins
+            printer.setPaperSize(QSizeF(80, 297), QPrinter.Millimeter)
+            printer.setPageMargins(0, 0, 0, 0, QPrinter.Millimeter)
+
+            doc = QTextDocument()
+            # Scale document width to the printable page width
+            page_width = printer.pageRect(QPrinter.Point).width()
+            if page_width > 0:
+                doc.setTextWidth(page_width)
+            doc.setHtml(html_content)
+            doc.print_(printer)
         except Exception as pe:
             print(f"Receipt printing notice: {pe}")
+
+    def _print_receipt(self, invoice: dict, receipt_html: str = None):
+        """Backward-compatible alias pointing to direct silent printing."""
+        self.print_receipt_directly(invoice, receipt_html)
 
     def checkout(self):
         """Payment completion handler: saves invoice, triggers direct receipt printing, and resets session."""
@@ -1880,20 +1947,34 @@ class MainWindow(QMainWindow):
             # 2. Generate backup PDF in reports directory
             pdf_path = generate_invoice_pdf(invoice)
 
-            # 3. Generate HTML receipt template and trigger direct hardware printing
+            # 3. Check Receipt Mode Toggle
+            is_print_enabled = self.receipt_toggle.isChecked() if hasattr(self, 'receipt_toggle') else True
             receipt_html = self._build_receipt_html(invoice)
-            self._print_receipt(invoice, receipt_html)
 
-            # 4. Confirmation message
-            QMessageBox.information(
-                self,
-                "تمت العملية بنجاح",
-                f"✅ تم تأكيد البيع وإصدار الفاتورة رقم: {invoice_no}\n\n"
-                f"• الصافي: {final_amt:.2f} ج.م\n"
-                f"• المدفوع: {paid:.2f} ج.م\n"
-                f"• المتبقي: {change_amount:.2f} ج.م\n"
-                f"• نسخة PDF: {pdf_path}",
-            )
+            if is_print_enabled:
+                # Direct silent printing without dialog
+                self.print_receipt_directly(invoice, receipt_html)
+
+                QMessageBox.information(
+                    self,
+                    "تمت العملية بنجاح",
+                    f"✅ تم تأكيد البيع وإصدار الفاتورة رقم: {invoice_no}\n\n"
+                    f"🖨️ تم إرسال الإيصال إلى الطابعة مباشرة.\n\n"
+                    f"• الصافي: {final_amt:.2f} ج.م\n"
+                    f"• المدفوع: {paid:.2f} ج.م\n"
+                    f"• المتبقي: {change_amount:.2f} ج.م\n"
+                    f"• نسخة PDF: {pdf_path}",
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "تم الحفظ بنجاح",
+                    f"✅ تم حفظ العملية بدون طباعة\n\n"
+                    f"• رقم الفاتورة: {invoice_no}\n"
+                    f"• الصافي: {final_amt:.2f} ج.م\n"
+                    f"• المدفوع: {paid:.2f} ج.م\n"
+                    f"• نسخة PDF: {pdf_path}",
+                )
 
             # 5. Reset/Refresh POS screen session for next customer
             self.reset_pos_session()

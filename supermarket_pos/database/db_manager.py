@@ -9,13 +9,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "pos_database.db"
+from utils.paths import DB_PATH, ensure_data_dirs, DATA_DIR
 
 
 class DBManager:
     def __init__(self, db_path: Optional[str] = None):
+        ensure_data_dirs()
         self.db_path = db_path or str(DB_PATH)
 
     @contextmanager

@@ -31,9 +31,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-PRODUCT_IMAGES_DIR = BASE_DIR / "assets" / "product_images"
-PRODUCT_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+from utils.paths import PRODUCT_IMAGES_DIR
 
 
 class StockWindow(QWidget):
@@ -121,17 +119,15 @@ class StockWindow(QWidget):
         self.expiry_input.setCalendarPopup(True)
         self.expiry_input.setDate(QDate.currentDate().addDays(30))
 
-        # Dynamic Category Combobox (Editable: cashier/admin can pick or type custom category)
+        # Strict SELECT Dropdown List for Category (Non-Editable)
         cat_layout = QHBoxLayout()
         cat_layout.setContentsMargins(0, 0, 0, 0)
         cat_layout.setSpacing(4)
 
         self.category_combo = QComboBox()
-        self.category_combo.setEditable(True)
-        self.category_combo.setInsertPolicy(QComboBox.NoInsert)
-        if self.category_combo.lineEdit():
-            self.category_combo.lineEdit().setPlaceholderText("اختر أو اكتب قسماً جديداً...")
-        self._refresh_categories_combo()
+        self.category_input = self.category_combo  # Alias for backward compatibility
+        self.category_combo.setEditable(False)  # Non-editable: strictly select from existing categories
+        self.populate_category_dropdown()
 
         self.add_cat_quick_btn = QToolButton()
         self.add_cat_quick_btn.setText("➕")
@@ -248,51 +244,60 @@ class StockWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._refresh_categories_combo()
+        self.populate_category_dropdown()
 
-    def _refresh_categories_combo(self):
-        """Populate the dynamic drop-down with all existing unique categories from database."""
-        try:
-            cats = self.db.get_distinct_categories()
-        except Exception:
-            try:
-                with self.db._connect() as conn:
-                    cur = conn.cursor()
-                    cur.execute(
-                        """
-                        SELECT name FROM Categories WHERE name IS NOT NULL AND TRIM(name) != ''
-                        UNION
-                        SELECT DISTINCT category FROM Products WHERE category IS NOT NULL AND TRIM(category) != ''
-                        """
-                    )
-                    cats = [r[0].strip() for r in cur.fetchall() if r[0] and r[0].strip()]
-            except Exception:
-                cats = ["مشروبات", "أطعمة", "مخبوزات", "منظفات", "ألبان", "حلويات", "أخرى"]
-
+    def populate_category_dropdown(self):
+        """Query existing unique categories from the database and populate non-editable select dropdown."""
         if not hasattr(self, "category_combo"):
             return
 
         current = self.category_combo.currentText().strip()
         self.category_combo.blockSignals(True)
         self.category_combo.clear()
-        self.category_combo.addItems(cats)
 
-        # Set up auto-completer for smooth inline typing
-        completer = QCompleter(cats, self.category_combo)
-        completer.setCaseSensitivity(Qt.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchContains)
-        self.category_combo.setCompleter(completer)
+        categories = []
+        try:
+            # Query existing categories from categories table or products
+            with self.db._connect() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT name FROM Categories WHERE name IS NOT NULL AND TRIM(name) != '' ORDER BY name ASC"
+                )
+                db_cats = [r[0].strip() for r in cur.fetchall() if r[0] and r[0].strip()]
 
-        if current and current in cats:
+                cur.execute(
+                    "SELECT DISTINCT category FROM Products WHERE category IS NOT NULL AND TRIM(category) != '' ORDER BY category ASC"
+                )
+                prod_cats = [r[0].strip() for r in cur.fetchall() if r[0] and r[0].strip()]
+
+                for c in db_cats + prod_cats:
+                    if c and c not in categories:
+                        categories.append(c)
+        except Exception:
+            pass
+
+        # Fallback defaults if database is empty
+        if not categories:
+            categories = ["عام", "أخرى"]
+
+        self.category_combo.addItems(categories)
+        self.category_combo.setEditable(False)  # Strictly non-editable select list
+
+        # Restore previously selected category if still exists in list, else select index 0
+        if current and current in categories:
             self.category_combo.setCurrentText(current)
-        elif current:
-            self.category_combo.addItem(current)
-            self.category_combo.setCurrentText(current)
-        elif "أخرى" in cats:
-            self.category_combo.setCurrentText("أخرى")
-        elif cats:
+        else:
             self.category_combo.setCurrentIndex(0)
+
         self.category_combo.blockSignals(False)
+
+    def load_categories_into_combobox(self):
+        """Alias for populate_category_dropdown."""
+        self.populate_category_dropdown()
+
+    def _refresh_categories_combo(self):
+        """Alias for populate_category_dropdown."""
+        self.populate_category_dropdown()
 
     def _quick_add_category(self):
         """Prompt cashier/admin to quickly create a new category directly from the stock page."""
@@ -420,7 +425,7 @@ class StockWindow(QWidget):
         self.price_input.setText("0")
         self.expiry_input.setDate(QDate.currentDate().addDays(30))
         if hasattr(self, "category_combo"):
-            self.category_combo.setCurrentText("أخرى")
+            self.category_combo.setCurrentIndex(0)
         self.editing_product_id = None
         self._clear_image()
         self.save_btn.setText("حفظ الشحنة")
