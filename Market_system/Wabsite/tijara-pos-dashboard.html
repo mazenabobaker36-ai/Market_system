@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tijara &middot; POS Subscriber Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+:root{
+  --ink:#14202B;
+  --ink-soft:#1E2E3D;
+  --ink-line:#2A3B4A;
+  --paper:#F5F6F3;
+  --surface:#FFFFFF;
+  --line:#E1E4DF;
+  --text:#1B2420;
+  --text-soft:#5B655F;
+  --emerald:#1F7A5C;
+  --emerald-soft:#E4F2EC;
+  --copper:#B96A2E;
+  --copper-soft:#F6E8DA;
+  --amber:#B4801C;
+  --amber-soft:#F5EAD5;
+  --brick:#AE4030;
+  --brick-soft:#F3E1DD;
+  --radius:10px;
+}
+*{box-sizing:border-box;}
+body{
+  font-family:'IBM Plex Sans',sans-serif;
+  background:var(--paper);
+  color:var(--text);
+  min-height:100vh;
+}
+h1,h2,h3,h4,.brand,.stat-value,.plan-price{font-family:'Space Grotesk',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+
+/* ---------- layout shell ---------- */
+.app-shell{display:flex;min-height:100vh;}
+.sidebar{
+  width:250px;flex:0 0 250px;background:var(--ink);color:#CBD5D1;
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{
+  color:#fff;font-weight:700;font-size:1.25rem;padding:1.5rem 1.5rem 1rem;
+  display:flex;align-items:center;gap:.6rem;letter-spacing:.01em;
+}
+.brand .mark{
+  width:34px;height:34px;border-radius:8px;background:var(--emerald);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex:0 0 auto;
+}
+.side-tag{padding:0 1.5rem 1.25rem;font-size:.8rem;color:#7C8E88;border-bottom:1px solid var(--ink-line);}
+.side-nav{padding:1rem .75rem;flex:1;}
+.side-nav .nav-link{
+  color:#B7C4C0;padding:.65rem .9rem;border-radius:8px;font-size:.93rem;
+  display:flex;align-items:center;gap:.7rem;margin-bottom:.15rem;transition:background .15s ease,color .15s ease;
+}
+.side-nav .nav-link i{font-size:1.05rem;width:1.1rem;text-align:center;}
+.side-nav .nav-link:hover{background:var(--ink-soft);color:#fff;}
+.side-nav .nav-link.active{background:var(--emerald);color:#fff;}
+.side-foot{padding:1rem 1.5rem 1.5rem;border-top:1px solid var(--ink-line);font-size:.8rem;color:#7C8E88;}
+.side-foot .who{color:#E7ECE9;font-weight:600;font-size:.85rem;}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--line);
+  padding:.9rem 1.75rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:5;
+}
+.topbar .page-title{font-weight:600;font-size:1.05rem;margin:0;}
+.topbar .page-sub{font-size:.8rem;color:var(--text-soft);margin:0;}
+.search-box{position:relative;max-width:340px;flex:1;}
+.search-box i{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text-soft);}
+.search-box input{padding-left:2.1rem;background:var(--paper);border:1px solid var(--line);}
+.search-box input:focus{background:#fff;}
+.content{padding:1.75rem;flex:1;}
+
+/* ---------- stat cards ---------- */
+.stat-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:1.15rem 1.25rem;height:100%;
+}
+.stat-label{font-size:.8rem;color:var(--text-soft);margin-bottom:.35rem;}
+.stat-value{font-size:1.7rem;font-weight:700;line-height:1;}
+.stat-delta{font-size:.78rem;margin-top:.5rem;display:inline-flex;align-items:center;gap:.3rem;}
+
+.card-plain{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);}
+.section-heading{font-weight:600;font-size:1.05rem;margin-bottom:.15rem;}
+.section-sub{font-size:.82rem;color:var(--text-soft);}
+
+/* ---------- badges ---------- */
+.badge-status{font-weight:600;font-size:.74rem;padding:.35em .65em;border-radius:6px;}
+.badge-active{background:var(--emerald-soft);color:var(--emerald);}
+.badge-expiring{background:var(--amber-soft);color:var(--amber);}
+.badge-expired{background:var(--brick-soft);color:var(--brick);}
+.badge-suspended{background:#E7E9E6;color:#5B655F;}
+.plan-chip{font-size:.72rem;font-weight:600;padding:.25em .55em;border-radius:6px;background:var(--copper-soft);color:var(--copper);}
+
+/* ---------- table ---------- */
+.table-tijara{margin-bottom:0;}
+.table-tijara thead th{
+  font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-soft);
+  border-bottom:1px solid var(--line);font-weight:600;padding:.85rem 1rem;background:var(--paper);
+}
+.table-tijara tbody td{padding:.9rem 1rem;vertical-align:middle;border-bottom:1px solid var(--line);font-size:.9rem;}
+.table-tijara tbody tr:last-child td{border-bottom:none;}
+.shop-name{font-weight:600;}
+.shop-owner{font-size:.78rem;color:var(--text-soft);}
+.license-key{background:var(--paper);border:1px dashed var(--line);border-radius:6px;padding:.3em .6em;font-size:.8rem;}
+.icon-btn{
+  border:1px solid var(--line);background:#fff;border-radius:7px;width:32px;height:32px;
+  display:inline-flex;align-items:center;justify-content:center;color:var(--text-soft);
+}
+.icon-btn:hover{background:var(--paper);color:var(--text);}
+
+/* ---------- plans ---------- */
+.plan-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:1.4rem;height:100%;position:relative;
+}
+.plan-card.featured{border-color:var(--emerald);}
+.plan-name{font-weight:600;font-size:1.05rem;}
+.plan-price{font-size:1.9rem;font-weight:700;}
+.plan-cycle{font-size:.8rem;color:var(--text-soft);}
+.plan-feat{font-size:.85rem;color:var(--text);padding:.35rem 0;border-top:1px solid var(--line);display:flex;gap:.5rem;align-items:flex-start;}
+.plan-feat i{color:var(--emerald);margin-top:.15rem;}
+.plan-count{font-size:.78rem;color:var(--text-soft);}
+
+/* ---------- chart (custom, no lib) ---------- */
+.mini-chart{display:flex;align-items:flex-end;gap:.6rem;height:150px;padding-top:.5rem;}
+.mini-chart .bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:.4rem;height:100%;justify-content:flex-end;}
+.mini-chart .bar{width:100%;max-width:34px;border-radius:5px 5px 2px 2px;background:var(--emerald);opacity:.85;}
+.mini-chart .bar-label{font-size:.72rem;color:var(--text-soft);}
+
+/* ---------- activity ---------- */
+.activity-item{display:flex;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--line);}
+.activity-item:last-child{border-bottom:none;}
+.activity-dot{width:32px;height:32px;border-radius:8px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--paper);color:var(--emerald);}
+.activity-text{font-size:.85rem;}
+.activity-time{font-size:.75rem;color:var(--text-soft);}
+
+/* ---------- misc ---------- */
+.btn-emerald{background:var(--emerald);border-color:var(--emerald);color:#fff;}
+.btn-emerald:hover{background:#186349;border-color:#186349;color:#fff;}
+.btn-outline-tijara{border-color:var(--line);color:var(--text);}
+.btn-outline-tijara:hover{background:var(--paper);color:var(--text);}
+.form-label{font-size:.83rem;font-weight:600;}
+.modal-content{border-radius:var(--radius);border:none;}
+.empty-state{padding:3rem 1rem;text-align:center;color:var(--text-soft);}
+.empty-state i{font-size:1.8rem;color:var(--line);}
+
+.login-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--ink);padding:1rem;}
+.login-card{background:var(--surface);border-radius:14px;padding:2.25rem;max-width:390px;width:100%;}
+.login-mark{width:44px;height:44px;border-radius:10px;background:var(--emerald);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:1rem;}
+
+.toast-container{z-index:2000;}
+
+@media (max-width:900px){
+  .sidebar{position:fixed;left:-260px;z-index:50;transition:left .2s ease;box-shadow:0 0 0 100vmax rgba(0,0,0,0);}
+  .sidebar.open{left:0;box-shadow:8px 0 24px rgba(0,0,0,.25);}
+  .content{padding:1.1rem;}
+  .topbar{padding:.8rem 1rem;}
+}
+</style>
+</head>
+<body>
+
+<!-- ======================= LOGIN VIEW ======================= -->
+<div id="loginView" class="login-shell">
+  <div class="login-card">
+    <div class="login-mark">T</div>
+    <h1 class="h4 mb-1">Sign in to Tijara</h1>
+    <p class="text-secondary small mb-4">Control center for your POS subscribers and license IDs.</p>
+    <form id="loginForm">
+      <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" value="owner@tijara.app" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-control" value="tijara-demo" required>
+      </div>
+      <button type="submit" class="btn btn-emerald w-100 py-2">Sign in</button>
+    </form>
+    <p class="text-secondary small mt-3 mb-0">Demo build — data is stored in this browser only.</p>
+  </div>
+</div>
+
+<!-- ======================= APP SHELL ======================= -->
+<div id="appShell" class="app-shell d-none">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="mark">T</span> Tijara</div>
+    <div class="side-tag">POS Subscriber Control</div>
+    <nav class="side-nav" id="sideNav">
+      <a href="#" class="nav-link active" data-view="overview"><i class="bi bi-grid-1x2"></i> Overview</a>
+      <a href="#" class="nav-link" data-view="subscribers"><i class="bi bi-people"></i> Subscribers</a>
+      <a href="#" class="nav-link" data-view="plans"><i class="bi bi-boxes"></i> Plans</a>
+      <a href="#" class="nav-link" data-view="settings"><i class="bi bi-gear"></i> Settings</a>
+    </nav>
+    <div class="side-foot">
+      <div class="who">Ahmed — Owner</div>
+      <a href="#" id="logoutLink" class="text-decoration-none" style="color:#8FA39D;">Sign out</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="btn btn-outline-tijara d-md-none" id="menuToggle"><i class="bi bi-list"></i></button>
+      <div>
+        <p class="page-title" id="pageTitle">Overview</p>
+        <p class="page-sub" id="pageSub">Your subscriber base at a glance</p>
+      </div>
+      <div class="search-box ms-auto d-none d-sm-block">
+        <i class="bi bi-search"></i>
+        <input type="text" class="form-control" id="globalSearch" placeholder="Search shop, owner or license ID">
+      </div>
+      <button class="btn btn-emerald d-flex align-items-center gap-2" id="newSubscriberBtn">
+        <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">New subscriber</span>
+      </button>
+    </div>
+
+    <div class="content">
+      <!-- ---------- OVERVIEW ---------- -->
+      <section id="view-overview">
+        <div class="row g-3 mb-3">
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-label">Total subscribers</div>
+              <div class="stat-value" id="statTotal">0</div>
+              <span class="stat-delta text-secondary"><i class="bi bi-shop"></i> shops on Tijara</span>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-label">Active licenses</div>
+              <div class="stat-value" id="statActive">0</div>
+              <span class="stat-delta" style="color:var(--emerald)"><i class="bi bi-check-circle"></i> in good standing</span>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-label">Expiring within 7 days</div>
+              <div class="stat-value" id="statExpiring">0</div>
+              <span class="stat-delta" style="color:var(--amber)"><i class="bi bi-hourglass-split"></i> needs renewal</span>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-label">Monthly recurring revenue</div>
+              <div class="stat-value" id="statMrr">RM 0</div>
+              <span class="stat-delta text-secondary"><i class="bi bi-cash-coin"></i> across active plans</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-lg-7">
+            <div class="card-plain p-3 p-lg-4 h-100">
+              <div class="section-heading">New subscribers, last 6 months</div>
+              <div class="section-sub mb-2">Shops onboarded per month</div>
+              <div class="mini-chart" id="growthChart"></div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="card-plain p-3 p-lg-4 h-100">
+              <div class="section-heading">Recent activity</div>
+              <div class="section-sub mb-2">Latest subscriber events</div>
+              <div id="activityFeed"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- SUBSCRIBERS ---------- -->
+      <section id="view-subscribers" class="d-none">
+        <div class="card-plain">
+          <div class="d-flex flex-wrap align-items-center gap-2 p-3 border-bottom" style="border-color:var(--line)!important;">
+            <div class="btn-group" role="group" id="statusFilter">
+              <button class="btn btn-sm btn-outline-tijara active" data-filter="all">All</button>
+              <button class="btn btn-sm btn-outline-tijara" data-filter="active">Active</button>
+              <button class="btn btn-sm btn-outline-tijara" data-filter="expiring">Expiring</button>
+              <button class="btn btn-sm btn-outline-tijara" data-filter="expired">Expired</button>
+              <button class="btn btn-sm btn-outline-tijara" data-filter="suspended">Suspended</button>
+            </div>
+            <div class="ms-auto text-secondary small" id="subscriberCount"></div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-tijara">
+              <thead>
+                <tr>
+                  <th>Shop</th>
+                  <th>Plan</th>
+                  <th>License ID</th>
+                  <th>Expires</th>
+                  <th>Status</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="subscriberRows"></tbody>
+            </table>
+          </div>
+          <div id="subscriberEmpty" class="empty-state d-none">
+            <i class="bi bi-inbox d-block mb-2"></i>
+            No subscribers match this view yet.
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- PLANS ---------- -->
+      <section id="view-plans" class="d-none">
+        <div class="d-flex align-items-center mb-3">
+          <div>
+            <div class="section-heading">Subscription plans</div>
+            <div class="section-sub">What each tier includes for a subscriber's POS install</div>
+          </div>
+          <button class="btn btn-emerald ms-auto d-flex align-items-center gap-2" id="newPlanBtn">
+            <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">New plan</span>
+          </button>
+        </div>
+        <div class="row g-3" id="plansGrid"></div>
+      </section>
+
+      <!-- ---------- SETTINGS ---------- -->
+      <section id="view-settings" class="d-none">
+        <div class="card-plain p-3 p-lg-4" style="max-width:560px;">
+          <div class="section-heading mb-3">License ID format</div>
+          <div class="mb-3">
+            <label class="form-label">Prefix</label>
+            <input type="text" class="form-control" id="settingPrefix" value="POS" maxlength="6">
+            <div class="form-text">Shown at the start of every generated license ID, e.g. <span class="mono">POS-7K2N-4XQ1</span>.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Currency</label>
+            <select class="form-select" id="settingCurrency">
+              <option value="RM">RM (Malaysian Ringgit)</option>
+              <option value="$">$ (US Dollar)</option>
+              <option value="EGP">EGP (Egyptian Pound)</option>
+              <option value="SDG">SDG (Sudanese Pound)</option>
+            </select>
+          </div>
+          <button class="btn btn-emerald" id="saveSettingsBtn">Save settings</button>
+          <hr class="my-4" style="border-color:var(--line);">
+          <div class="section-heading mb-2">Reset demo data</div>
+          <p class="section-sub mb-3">Clears everything stored in this browser and restores the sample subscribers.</p>
+          <button class="btn btn-outline-tijara" id="resetDataBtn"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset to sample data</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= NEW / EDIT SUBSCRIBER MODAL ======================= -->
+<div class="modal fade" id="subscriberModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="border-color:var(--line);">
+        <h5 class="modal-title" id="subscriberModalTitle">New subscriber</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="subscriberForm">
+        <div class="modal-body">
+          <input type="hidden" id="subId">
+          <div class="mb-3">
+            <label class="form-label">Shop name</label>
+            <input type="text" class="form-control" id="subShop" required placeholder="e.g. Al-Noor Supermarket">
+          </div>
+          <div class="row g-2">
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Owner name</label>
+              <input type="text" class="form-control" id="subOwner" required>
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Phone</label>
+              <input type="tel" class="form-control" id="subPhone" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" id="subEmail" required>
+          </div>
+          <div class="row g-2">
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Plan</label>
+              <select class="form-select" id="subPlan" required></select>
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Start date</label>
+              <input type="date" class="form-control" id="subStart" required>
+            </div>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="subRegenerate">
+            <label class="form-check-label small" for="subRegenerate">Generate a new license ID</label>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--line);">
+          <button type="button" class="btn btn-outline-tijara" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-emerald">Save subscriber</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= LICENSE ID VIEW MODAL ======================= -->
+<div class="modal fade" id="licenseModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header" style="border-color:var(--line);">
+        <h5 class="modal-title">License ID</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <p class="section-sub mb-2" id="licenseShopName">Shop name</p>
+        <div class="license-key mono fs-5 d-inline-block px-3 py-2" id="licenseKeyDisplay">POS-0000-0000</div>
+        <p class="section-sub mt-3 mb-0">Enter this ID in the POS app's activation screen.</p>
+      </div>
+      <div class="modal-footer justify-content-center" style="border-color:var(--line);">
+        <button class="btn btn-outline-tijara btn-sm" id="copyLicenseBtn"><i class="bi bi-clipboard me-1"></i>Copy ID</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= PLAN EDITOR MODAL ======================= -->
+<div class="modal fade" id="planModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="border-color:var(--line);">
+        <h5 class="modal-title" id="planModalTitle">New plan</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="planForm">
+        <div class="modal-body">
+          <input type="hidden" id="planId">
+          <div class="mb-3">
+            <label class="form-label">Plan name</label>
+            <input type="text" class="form-control" id="planName" required placeholder="e.g. Growth">
+          </div>
+          <div class="row g-2">
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Price</label>
+              <div class="input-group">
+                <span class="input-group-text" id="planPriceCurrency">RM</span>
+                <input type="number" class="form-control" id="planPrice" min="0" step="1" required>
+              </div>
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label">Billing cycle (days)</label>
+              <input type="number" class="form-control" id="planCycle" min="1" step="1" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Features</label>
+            <textarea class="form-control" id="planFeatures" rows="4" placeholder="One feature per line" required></textarea>
+            <div class="form-text">Shown on the plan card, one per line.</div>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--line);">
+          <button type="button" class="btn btn-outline-tijara" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-emerald">Save plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="appToast" class="toast align-items-center text-white border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="appToastBody">Done.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  const STORE_KEY = "tijara_state_v1";
+
+  const DEFAULT_PLANS = [
+    { id:"starter", name:"Starter", price:49, cycleDays:30, features:["1 register / till","Email support","Basic sales reports"] },
+    { id:"growth", name:"Growth", price:99, cycleDays:30, features:["Up to 3 registers","Priority support","Stock + invoice PDFs","Barcode printing"] },
+    { id:"enterprise", name:"Enterprise", price:219, cycleDays:30, features:["Unlimited registers","Dedicated support line","Multi-branch reporting","Custom onboarding"] },
+  ];
+
+  const SAMPLE_SHOPS = [
+    ["Al-Noor Supermarket","Yusuf Al-Amin","+60 12-334 5567","yusuf@alnoor.my","growth",-5],
+    ["Fresh Corner KL","Nadia Rahman","+60 17-220 9981","nadia@freshcorner.my","starter",-40],
+    ["Bab Al Salam Mini Market","Omar Idris","+249 91-234 5678","omar@babalsalam.sd","starter",-27],
+    ["Al-Waha Grocery","Mona Hassan","+20 10-987 6543","mona@alwaha.eg","enterprise",-2],
+    ["Sunrise Mart Petaling Jaya","Kevin Tan","+60 16-778 3320","kevin@sunrisemart.my","growth",-33],
+    ["Al-Baraka Store","Salma Idris","+249 92-441 7789","salma@albaraka.sd","starter",1],
+  ];
+
+  function uid(){ return Math.random().toString(36).slice(2,9); }
+
+  function genLicense(prefix){
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const group = () => Array.from({length:4},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
+    return `${prefix}-${group()}-${group()}`;
+  }
+
+  function addDays(dateStr, days){
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0,10);
+  }
+  function daysBetween(a,b){
+    return Math.round((new Date(b) - new Date(a)) / 86400000);
+  }
+  function fmtDate(dateStr){
+    return new Date(dateStr).toLocaleDateString(undefined,{ day:"numeric", month:"short", year:"numeric" });
+  }
+
+  function computeStatus(sub){
+    if(sub.suspended) return "suspended";
+    const today = new Date().toISOString().slice(0,10);
+    const diff = daysBetween(today, sub.expiry);
+    if(diff < 0) return "expired";
+    if(diff <= 7) return "expiring";
+    return "active";
+  }
+
+  function seedState(){
+    const today = new Date().toISOString().slice(0,10);
+    const subscribers = SAMPLE_SHOPS.map(([shop,owner,phone,email,planId,expiryOffset])=>{
+      const plan = DEFAULT_PLANS.find(p=>p.id===planId);
+      const start = addDays(today, -60);
+      return {
+        id: uid(),
+        shop, owner, phone, email,
+        planId,
+        start,
+        expiry: addDays(today, expiryOffset),
+        license: genLicense("POS"),
+        suspended: false,
+        createdAt: start,
+      };
+    });
+    return {
+      settings:{ prefix:"POS", currency:"RM" },
+      plans: DEFAULT_PLANS,
+      subscribers,
+      activity: subscribers.slice(0,4).map(s=>({
+        text:`License generated for ${s.shop}`,
+        time: s.createdAt,
+      })),
+    };
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    const seeded = seedState();
+    saveState(seeded);
+    return seeded;
+  }
+  function saveState(s){ localStorage.setItem(STORE_KEY, JSON.stringify(s)); }
+
+  let state = loadState();
+
+  function planById(id){ return state.plans.find(p=>p.id===id) || state.plans[0]; }
+
+  // ---------------- toast ----------------
+  const toastEl = document.getElementById("appToast");
+  const toast = new bootstrap.Toast(toastEl, { delay: 2600 });
+  function notify(msg, tone){
+    document.getElementById("appToastBody").textContent = msg;
+    toastEl.style.background = tone === "danger" ? "var(--brick)" : "var(--emerald)";
+    toast.show();
+  }
+
+  // ---------------- login ----------------
+  document.getElementById("loginForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    document.getElementById("loginView").classList.add("d-none");
+    document.getElementById("appShell").classList.remove("d-none");
+    renderAll();
+  });
+  document.getElementById("logoutLink").addEventListener("click", function(e){
+    e.preventDefault();
+    document.getElementById("appShell").classList.add("d-none");
+    document.getElementById("loginView").classList.remove("d-none");
+  });
+
+  // ---------------- nav ----------------
+  const views = ["overview","subscribers","plans","settings"];
+  const titles = {
+    overview:["Overview","Your subscriber base at a glance"],
+    subscribers:["Subscribers","Manage shops, plans and license IDs"],
+    plans:["Plans","What each tier includes for a subscriber's POS install"],
+    settings:["Settings","License format and workspace preferences"],
+  };
+  document.getElementById("sideNav").addEventListener("click", function(e){
+    const link = e.target.closest(".nav-link");
+    if(!link) return;
+    e.preventDefault();
+    document.querySelectorAll("#sideNav .nav-link").forEach(l=>l.classList.remove("active"));
+    link.classList.add("active");
+    const v = link.dataset.view;
+    views.forEach(name=>{
+      document.getElementById("view-"+name).classList.toggle("d-none", name!==v);
+    });
+    document.getElementById("pageTitle").textContent = titles[v][0];
+    document.getElementById("pageSub").textContent = titles[v][1];
+    document.getElementById("sidebar").classList.remove("open");
+  });
+  document.getElementById("menuToggle").addEventListener("click", ()=>{
+    document.getElementById("sidebar").classList.toggle("open");
+  });
+
+  // ---------------- render: overview ----------------
+  function renderOverview(){
+    const subs = state.subscribers;
+    const statuses = subs.map(s=>({s, status: computeStatus(s)}));
+    document.getElementById("statTotal").textContent = subs.length;
+    document.getElementById("statActive").textContent = statuses.filter(x=>x.status==="active").length;
+    document.getElementById("statExpiring").textContent = statuses.filter(x=>x.status==="expiring").length;
+    const mrr = statuses.filter(x=>x.status==="active"||x.status==="expiring")
+      .reduce((sum,x)=> sum + planById(x.s.planId).price, 0);
+    document.getElementById("statMrr").textContent = `${state.settings.currency} ${mrr.toLocaleString()}`;
+
+    // growth chart: count by month of createdAt for last 6 months
+    const months = [];
+    const now = new Date();
+    for(let i=5;i>=0;i--){
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+      months.push({ label: d.toLocaleDateString(undefined,{month:"short"}), key: `${d.getFullYear()}-${d.getMonth()}` });
+    }
+    const counts = months.map(m=>{
+      return subs.filter(s=>{
+        const cd = new Date(s.createdAt);
+        return `${cd.getFullYear()}-${cd.getMonth()}` === m.key;
+      }).length;
+    });
+    const max = Math.max(1, ...counts);
+    const chart = document.getElementById("growthChart");
+    chart.innerHTML = months.map((m,i)=>{
+      const h = Math.max(6, Math.round((counts[i]/max)*110));
+      return `<div class="bar-wrap">
+        <div class="bar" style="height:${h}px" title="${counts[i]} new"></div>
+        <div class="bar-label">${m.label}</div>
+      </div>`;
+    }).join("");
+
+    const feed = document.getElementById("activityFeed");
+    if(!state.activity.length){
+      feed.innerHTML = `<div class="empty-state py-3"><i class="bi bi-clock-history d-block mb-2"></i>No activity yet.</div>`;
+    } else {
+      feed.innerHTML = state.activity.slice(0,6).map(a=>`
+        <div class="activity-item">
+          <div class="activity-dot"><i class="bi bi-lightning-charge"></i></div>
+          <div>
+            <div class="activity-text">${escapeHtml(a.text)}</div>
+            <div class="activity-time">${fmtDate(a.time)}</div>
+          </div>
+        </div>`).join("");
+    }
+  }
+
+  // ---------------- render: subscribers ----------------
+  let currentFilter = "all";
+  let searchTerm = "";
+
+  function statusBadge(status){
+    const map = {
+      active:["badge-active","Active"],
+      expiring:["badge-expiring","Expiring soon"],
+      expired:["badge-expired","Expired"],
+      suspended:["badge-suspended","Suspended"],
+    };
+    const [cls,label] = map[status];
+    return `<span class="badge-status ${cls}">${label}</span>`;
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function renderSubscribers(){
+    let rows = state.subscribers.map(s=>({ s, status: computeStatus(s) }));
+    if(currentFilter !== "all") rows = rows.filter(r=>r.status===currentFilter);
+    if(searchTerm){
+      const t = searchTerm.toLowerCase();
+      rows = rows.filter(r =>
+        r.s.shop.toLowerCase().includes(t) ||
+        r.s.owner.toLowerCase().includes(t) ||
+        r.s.license.toLowerCase().includes(t)
+      );
+    }
+    document.getElementById("subscriberCount").textContent = `${rows.length} of ${state.subscribers.length} subscribers`;
+    const tbody = document.getElementById("subscriberRows");
+    document.getElementById("subscriberEmpty").classList.toggle("d-none", rows.length>0);
+
+    tbody.innerHTML = rows.map(({s,status})=>{
+      const plan = planById(s.planId);
+      return `
+      <tr>
+        <td>
+          <div class="shop-name">${escapeHtml(s.shop)}</div>
+          <div class="shop-owner">${escapeHtml(s.owner)} &middot; ${escapeHtml(s.phone)}</div>
+        </td>
+        <td><span class="plan-chip">${plan.name}</span></td>
+        <td><span class="license-key mono" role="button" data-action="view-license" data-id="${s.id}">${s.license}</span></td>
+        <td>${fmtDate(s.expiry)}</td>
+        <td>${statusBadge(status)}</td>
+        <td class="text-end">
+          <div class="d-inline-flex gap-1">
+            <button class="icon-btn" title="Renew" data-action="renew" data-id="${s.id}"><i class="bi bi-arrow-repeat"></i></button>
+            <button class="icon-btn" title="Edit" data-action="edit" data-id="${s.id}"><i class="bi bi-pencil"></i></button>
+            <button class="icon-btn" title="${s.suspended?'Reactivate':'Suspend'}" data-action="toggle-suspend" data-id="${s.id}">
+              <i class="bi ${s.suspended?'bi-play-circle':'bi-pause-circle'}"></i>
+            </button>
+            <button class="icon-btn" title="Delete" data-action="delete" data-id="${s.id}"><i class="bi bi-trash3"></i></button>
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  document.getElementById("statusFilter").addEventListener("click", function(e){
+    const btn = e.target.closest("button");
+    if(!btn) return;
+    this.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentFilter = btn.dataset.filter;
+    renderSubscribers();
+  });
+  document.getElementById("globalSearch").addEventListener("input", function(){
+    searchTerm = this.value.trim();
+    renderSubscribers();
+  });
+
+  const licenseModal = new bootstrap.Modal(document.getElementById("licenseModal"));
+  let licenseClipboardValue = "";
+
+  document.getElementById("subscriberRows").addEventListener("click", function(e){
+    const el = e.target.closest("[data-action]");
+    if(!el) return;
+    const id = el.dataset.id;
+    const sub = state.subscribers.find(s=>s.id===id);
+    if(!sub) return;
+    const action = el.dataset.action;
+
+    if(action === "view-license"){
+      document.getElementById("licenseShopName").textContent = sub.shop;
+      document.getElementById("licenseKeyDisplay").textContent = sub.license;
+      licenseClipboardValue = sub.license;
+      licenseModal.show();
+    }
+    if(action === "renew"){
+      const plan = planById(sub.planId);
+      const today = new Date().toISOString().slice(0,10);
+      const base = new Date(sub.expiry) > new Date(today) ? sub.expiry : today;
+      sub.expiry = addDays(base, plan.cycleDays);
+      sub.suspended = false;
+      logActivity(`${sub.shop} renewed through ${fmtDate(sub.expiry)}`);
+      persistAndRender();
+      notify(`${sub.shop} renewed to ${fmtDate(sub.expiry)}`);
+    }
+    if(action === "toggle-suspend"){
+      sub.suspended = !sub.suspended;
+      logActivity(`${sub.shop} ${sub.suspended ? "suspended" : "reactivated"}`);
+      persistAndRender();
+      notify(`${sub.shop} ${sub.suspended ? "suspended" : "reactivated"}`);
+    }
+    if(action === "delete"){
+      if(confirm(`Remove ${sub.shop} and its license? This can't be undone.`)){
+        state.subscribers = state.subscribers.filter(s=>s.id!==id);
+        logActivity(`${sub.shop} removed from Tijara`);
+        persistAndRender();
+        notify(`${sub.shop} removed`, "danger");
+      }
+    }
+    if(action === "edit"){
+      openSubscriberModal(sub);
+    }
+  });
+
+  document.getElementById("copyLicenseBtn").addEventListener("click", function(){
+    navigator.clipboard?.writeText(licenseClipboardValue).then(()=> notify("License ID copied"));
+  });
+
+  // ---------------- render: plans ----------------
+  function renderPlans(){
+    const grid = document.getElementById("plansGrid");
+    grid.innerHTML = state.plans.map((p,i)=>{
+      const count = state.subscribers.filter(s=>s.planId===p.id && computeStatus(s)!=="expired").length;
+      return `
+      <div class="col-md-4">
+        <div class="plan-card ${i===1?'featured':''}">
+          <div class="d-flex align-items-start justify-content-between">
+            <div class="plan-name">${escapeHtml(p.name)}</div>
+            <div class="d-flex gap-1">
+              <button class="icon-btn" title="Edit plan" data-plan-action="edit" data-plan-id="${p.id}"><i class="bi bi-pencil"></i></button>
+              <button class="icon-btn" title="Delete plan" data-plan-action="delete" data-plan-id="${p.id}"><i class="bi bi-trash3"></i></button>
+            </div>
+          </div>
+          <div class="plan-price mt-1">${state.settings.currency} ${p.price}<span class="plan-cycle">/ ${p.cycleDays} days</span></div>
+          <div class="plan-count mb-2">${count} active subscriber${count===1?'':'s'}</div>
+          ${p.features.map(f=>`<div class="plan-feat"><i class="bi bi-check2"></i>${escapeHtml(f)}</div>`).join("")}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // ---------------- plan modal ----------------
+  const planModal = new bootstrap.Modal(document.getElementById("planModal"));
+
+  function openPlanModal(plan){
+    document.getElementById("planModalTitle").textContent = plan ? "Edit plan" : "New plan";
+    document.getElementById("planId").value = plan ? plan.id : "";
+    document.getElementById("planName").value = plan ? plan.name : "";
+    document.getElementById("planPrice").value = plan ? plan.price : "";
+    document.getElementById("planCycle").value = plan ? plan.cycleDays : 30;
+    document.getElementById("planFeatures").value = plan ? plan.features.join("\n") : "";
+    document.getElementById("planPriceCurrency").textContent = state.settings.currency;
+    planModal.show();
+  }
+
+  document.getElementById("newPlanBtn").addEventListener("click", ()=> openPlanModal(null));
+
+  document.getElementById("plansGrid").addEventListener("click", function(e){
+    const btn = e.target.closest("[data-plan-action]");
+    if(!btn) return;
+    const id = btn.dataset.planId;
+    const plan = state.plans.find(p=>p.id===id);
+    if(!plan) return;
+    if(btn.dataset.planAction === "edit"){
+      openPlanModal(plan);
+    }
+    if(btn.dataset.planAction === "delete"){
+      const inUse = state.subscribers.filter(s=>s.planId===id).length;
+      if(inUse > 0){
+        notify(`Can't delete ${plan.name} — ${inUse} subscriber${inUse===1?'':'s'} still on it`, "danger");
+        return;
+      }
+      if(state.plans.length <= 1){
+        notify("You need at least one plan", "danger");
+        return;
+      }
+      if(confirm(`Delete the ${plan.name} plan?`)){
+        state.plans = state.plans.filter(p=>p.id!==id);
+        persistAndRender();
+        notify(`${plan.name} plan deleted`, "danger");
+      }
+    }
+  });
+
+  document.getElementById("planForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    const id = document.getElementById("planId").value;
+    const name = document.getElementById("planName").value.trim();
+    const price = Math.max(0, parseInt(document.getElementById("planPrice").value, 10) || 0);
+    const cycleDays = Math.max(1, parseInt(document.getElementById("planCycle").value, 10) || 30);
+    const features = document.getElementById("planFeatures").value
+      .split("\n").map(f=>f.trim()).filter(Boolean);
+
+    if(!features.length){
+      notify("Add at least one feature", "danger");
+      return;
+    }
+
+    if(id){
+      const plan = state.plans.find(p=>p.id===id);
+      plan.name = name; plan.price = price; plan.cycleDays = cycleDays; plan.features = features;
+      notify(`${name} plan updated`);
+    } else {
+      const newId = name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") || uid();
+      const finalId = state.plans.some(p=>p.id===newId) ? `${newId}-${uid()}` : newId;
+      state.plans.push({ id: finalId, name, price, cycleDays, features });
+      notify(`${name} plan created`);
+    }
+    planModal.hide();
+    persistAndRender();
+  });
+
+  // ---------------- subscriber modal ----------------
+  const subModal = new bootstrap.Modal(document.getElementById("subscriberModal"));
+  function fillPlanOptions(){
+    const sel = document.getElementById("subPlan");
+    sel.innerHTML = state.plans.map(p=>`<option value="${p.id}">${p.name} — ${state.settings.currency}${p.price}/mo</option>`).join("");
+  }
+  function openSubscriberModal(sub){
+    fillPlanOptions();
+    document.getElementById("subscriberModalTitle").textContent = sub ? "Edit subscriber" : "New subscriber";
+    document.getElementById("subId").value = sub ? sub.id : "";
+    document.getElementById("subShop").value = sub ? sub.shop : "";
+    document.getElementById("subOwner").value = sub ? sub.owner : "";
+    document.getElementById("subPhone").value = sub ? sub.phone : "";
+    document.getElementById("subEmail").value = sub ? sub.email : "";
+    document.getElementById("subPlan").value = sub ? sub.planId : state.plans[0].id;
+    document.getElementById("subStart").value = sub ? sub.start : new Date().toISOString().slice(0,10);
+    document.getElementById("subRegenerate").checked = !sub;
+    document.getElementById("subRegenerate").parentElement.classList.toggle("d-none", !sub);
+    subModal.show();
+  }
+  document.getElementById("newSubscriberBtn").addEventListener("click", ()=> openSubscriberModal(null));
+
+  document.getElementById("subscriberForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    const id = document.getElementById("subId").value;
+    const planId = document.getElementById("subPlan").value;
+    const start = document.getElementById("subStart").value;
+    const plan = planById(planId);
+
+    if(id){
+      const sub = state.subscribers.find(s=>s.id===id);
+      sub.shop = document.getElementById("subShop").value.trim();
+      sub.owner = document.getElementById("subOwner").value.trim();
+      sub.phone = document.getElementById("subPhone").value.trim();
+      sub.email = document.getElementById("subEmail").value.trim();
+      sub.planId = planId;
+      sub.start = start;
+      if(document.getElementById("subRegenerate").checked){
+        sub.license = genLicense(state.settings.prefix);
+        logActivity(`New license ID generated for ${sub.shop}`);
+      } else {
+        logActivity(`${sub.shop} details updated`);
+      }
+      notify(`${sub.shop} updated`);
+    } else {
+      const sub = {
+        id: uid(),
+        shop: document.getElementById("subShop").value.trim(),
+        owner: document.getElementById("subOwner").value.trim(),
+        phone: document.getElementById("subPhone").value.trim(),
+        email: document.getElementById("subEmail").value.trim(),
+        planId,
+        start,
+        expiry: addDays(start, plan.cycleDays),
+        license: genLicense(state.settings.prefix),
+        suspended: false,
+        createdAt: start,
+      };
+      state.subscribers.unshift(sub);
+      logActivity(`${sub.shop} subscribed to ${plan.name} — license issued`);
+      notify(`${sub.shop} added with a new license ID`);
+    }
+    subModal.hide();
+    persistAndRender();
+  });
+
+  // ---------------- settings ----------------
+  document.getElementById("saveSettingsBtn").addEventListener("click", function(){
+    state.settings.prefix = document.getElementById("settingPrefix").value.trim().toUpperCase() || "POS";
+    state.settings.currency = document.getElementById("settingCurrency").value;
+    persistAndRender();
+    notify("Settings saved");
+  });
+  document.getElementById("resetDataBtn").addEventListener("click", function(){
+    if(confirm("Reset all data in this browser to the sample subscribers?")){
+      state = seedState();
+      persistAndRender();
+      document.getElementById("settingPrefix").value = state.settings.prefix;
+      document.getElementById("settingCurrency").value = state.settings.currency;
+      notify("Sample data restored");
+    }
+  });
+
+  function logActivity(text){
+    state.activity.unshift({ text, time: new Date().toISOString().slice(0,10) });
+    state.activity = state.activity.slice(0,20);
+  }
+
+  function persistAndRender(){
+    saveState(state);
+    renderAll();
+  }
+
+  function renderAll(){
+    renderOverview();
+    renderSubscribers();
+    renderPlans();
+    document.getElementById("settingPrefix").value = state.settings.prefix;
+    document.getElementById("settingCurrency").value = state.settings.currency;
+  }
+})();
+</script>
+</body>
+</html>
