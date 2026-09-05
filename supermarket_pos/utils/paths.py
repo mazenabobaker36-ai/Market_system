@@ -21,34 +21,30 @@ def get_data_dir() -> Path:
     """
     Returns the persistent user data directory where writable files (database,
     product images, generated labels, invoice PDFs) must be stored.
-    In frozen/packaged mode on Windows, this is %LOCALAPPDATA%/SupermarketPOS.
-    In development mode, this points to the supermarket_pos project root.
+    Uses a dedicated writable AppData/Data directory in every environment.
     """
-    if getattr(sys, "frozen", False):
-        if sys.platform == "win32":
-            local_appdata = os.environ.get("LOCALAPPDATA")
-            if local_appdata:
-                path = Path(local_appdata) / "SupermarketPOS"
-                path.mkdir(parents=True, exist_ok=True)
-                return path
-        else:
-            xdg_data = os.environ.get("XDG_DATA_HOME")
-            if xdg_data:
-                path = Path(xdg_data) / "supermarket_pos"
-            else:
-                path = Path.home() / ".local" / "share" / "supermarket_pos"
-            path.mkdir(parents=True, exist_ok=True)
-            return path
-        return Path(sys.executable).resolve().parent
+    if sys.platform == "win32":
+        root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+        return root / "MySupermarketPOS" / "Data"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "MySupermarketPOS" / "Data"
 
-    return Path(__file__).resolve().parent.parent
+
+def resolve_database_path(app_name: str = "MySupermarketPOS") -> Path:
+    """Resolve and create the persistent database directory without touching app files."""
+    if sys.platform == "win32":
+        root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    data_dir = root / app_name / "Data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir / "supermarket.db"
 
 
 APP_DIR: Path = get_app_dir()
 DATA_DIR: Path = get_data_dir()
 
 # Persistent paths
-DB_PATH: Path = DATA_DIR / "pos_database.db"
+DB_PATH: Path = resolve_database_path()
 PRODUCT_IMAGES_DIR: Path = DATA_DIR / "assets" / "product_images"
 LABELS_DIR: Path = DATA_DIR / "assets" / "labels"
 REPORTS_DIR: Path = DATA_DIR / "reports"
@@ -63,18 +59,25 @@ def ensure_data_dirs() -> None:
     If the application is running packaged and pos_database.db does not exist yet
     in DATA_DIR, copies the bundled seed database from APP_DIR.
     """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     PRODUCT_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     LABELS_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Seed database initialization for first run when frozen
-    if getattr(sys, "frozen", False) and not DB_PATH.exists():
-        seed_db = APP_DIR / "pos_database.db"
-        if seed_db.exists():
-            try:
-                shutil.copy2(seed_db, DB_PATH)
-            except Exception:
-                pass
+    if not DB_PATH.exists():
+        candidates = [
+            DATA_DIR / "pos_database.db",
+            APP_DIR / "supermarket.db",
+            APP_DIR / "pos_database.db",
+        ]
+        for seed_db in candidates:
+            if seed_db.exists():
+                try:
+                    shutil.copy2(seed_db, DB_PATH)
+                except OSError:
+                    pass
+                break
 
         # Also copy bundled sample product images if any
         bundled_images = APP_DIR / "assets" / "product_images"

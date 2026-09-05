@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.paths import DB_PATH, ensure_data_dirs, DATA_DIR
+from database.migrations import migrate_database
 
 
 class DBManager:
@@ -155,6 +156,8 @@ class DBManager:
                 inv_cols = [r["name"] for r in cur.fetchall()]
                 if "discount" not in inv_cols:
                     cur.execute("ALTER TABLE Invoices ADD COLUMN discount REAL DEFAULT 0")
+                if "synced" not in inv_cols:
+                    cur.execute("ALTER TABLE Invoices ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")
             except Exception:
                 pass
 
@@ -188,6 +191,7 @@ class DBManager:
             )
 
         self._migrate_schema()
+        migrate_database(self.db_path)
         self._seed_defaults()
 
     def _migrate_schema(self):
@@ -914,6 +918,75 @@ class DBManager:
                 "invoices_today": invoices_today,
                 "available_stock_count": available_stock_count,
                 "categories_count": categories_count,
+            }
+
+    def get_pending_sales(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return unsynced invoices with their line items for reliable batch delivery."""
+        with self._connect() as conn:
+            invoices = conn.execute(
+                """
+                SELECT i.id, i.invoice_no, i.created_at, i.total, i.paid,
+                       i.change_amount, i.discount, i.user_id, u.username AS cashier
+                FROM Invoices i
+                LEFT JOIN Users u ON u.id = i.user_id
+                WHERE COALESCE(i.synced, 0) = 0
+                ORDER BY i.id ASC
+                LIMIT ?
+                """,
+                (max(1, int(limit)),),
+            ).fetchall()
+            result = []
+            for invoice in invoices:
+                sale = dict(invoice)
+                items = conn.execute(
+                    """
+                    SELECT ii.product_id, p.barcode, p.name, ii.qty,
+                           ii.manual_price AS unit_price, ii.subtotal
+                    FROM Invoice_Items ii
+                    JOIN Products p ON p.id = ii.product_id
+                    WHERE ii.invoice_id = ?
+                    ORDER BY ii.id ASC
+                    """,
+                    (invoice["id"],),
+                ).fetchall()
+                sale["items"] = [dict(item) for item in items]
+                result.append(sale)
+            return result
+
+    def mark_sales_synced(self, invoice_ids: List[int]) -> int:
+        """Mark only the invoices acknowledged by the server as synchronized."""
+        ids = [int(invoice_id) for invoice_id in invoice_ids]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE Invoices SET synced = 1 WHERE id IN ({placeholders})",
+                ids,
+            )
+            return cursor.rowcount
+
+    def get_sync_metrics(self) -> Dict[str, Any]:
+        with self._connect() as conn:
+            today = datetime.now().strftime("%Y-%m-%d")
+            sales = conn.execute(
+                "SELECT COALESCE(SUM(total), 0) AS total FROM Invoices WHERE DATE(created_at) = ?",
+                (today,),
+            ).fetchone()["total"]
+            low_stock = conn.execute(
+                "SELECT COUNT(*) AS count FROM Products WHERE stock_qty > 0 AND stock_qty <= 5"
+            ).fetchone()["count"]
+            session = conn.execute(
+                """
+                SELECT login_at FROM Login_History
+                WHERE status = 'SUCCESS'
+                ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()
+            return {
+                "total_daily_sales": float(sales or 0),
+                "total_low_stock_count": int(low_stock or 0),
+                "last_active_cashier_session": session["login_at"] if session else None,
             }
 
     def get_login_history(self, limit: int = 100) -> List[Dict[str, Any]]:
