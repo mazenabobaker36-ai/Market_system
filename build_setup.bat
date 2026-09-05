@@ -29,6 +29,13 @@ echo.
 echo [2/4] Building application package with PyInstaller...
 cd supermarket_pos
 pyinstaller --noconfirm supermarket_pos.spec
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Main application compilation failed.
+    cd ..
+    pause
+    exit /b 1
+)
+pyinstaller --noconfirm --onefile --console --name updater updater\updater.py
 cd ..
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] PyInstaller compilation failed.
