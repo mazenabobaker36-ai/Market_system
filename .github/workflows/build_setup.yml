@@ -35,6 +35,7 @@ jobs:
         working-directory: supermarket_pos
         run: |
           pyinstaller --noconfirm supermarket_pos.spec
+          pyinstaller --noconfirm --onefile --console --name updater updater/updater.py
 
       - name: Compile Windows Setup with Inno Setup
         run: |

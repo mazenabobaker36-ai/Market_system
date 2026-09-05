@@ -38,6 +38,8 @@ from ui.invoices_admin_tab import InvoicesAdminTab
 from ui.stock_window import StockWindow
 from ui.user_admin_tab import UserAdminTab
 from utils.invoice_pdf import generate_invoice_pdf
+from licensing import LicenseCheckWorker, LicenseLockOverlay, LicenseManager
+from sync import SyncWorker
 
 
 class SquareProductCard(QFrame):
@@ -249,11 +251,23 @@ class SquareProductCard(QFrame):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, db, current_user, login_history_id=None):
+    def __init__(
+        self,
+        db,
+        current_user,
+        login_history_id=None,
+        license_manager=None,
+        store_name="سوبرماركت الخير",
+    ):
         super().__init__()
         self.db = db
         self.current_user = current_user
         self.login_history_id = login_history_id
+        self.license_manager = license_manager or LicenseManager()
+        self.store_name = store_name.strip() or "سوبرماركت الخير"
+        self.license_worker = None
+        self.license_overlay = None
+        self.sync_worker = None
         self.current_product = None
         self.cart = []
 
@@ -278,7 +292,10 @@ class MainWindow(QMainWindow):
         }
         role_display = role_display_map.get(self.user_role, current_user.get("role", "-"))
 
-        self.setWindowTitle(f"نظام السوبرماركت - المستخدم: {current_user['username']} ({role_display})")
+        self.setWindowTitle(
+            f"نظام إدارة السوبرماركت — {self.store_name} - "
+            f"{current_user['username']} ({role_display})"
+        )
         self.setMinimumSize(1024, 680)
 
         # Keyboard shortcuts for Full Screen (F11) and Escape
@@ -290,6 +307,8 @@ class MainWindow(QMainWindow):
         self._build_shell()
         self._build_pages()
         self._apply_role_permissions()
+        self._start_license_heartbeat()
+        self._start_data_sync()
 
         # Launch window maximized by default for responsive screen support
         self.showMaximized()
@@ -310,6 +329,47 @@ class MainWindow(QMainWindow):
             pass
 
         self.refresh_reports()
+
+    def _start_license_heartbeat(self):
+        credentials = self.license_manager.stored_credentials()
+        if not credentials:
+            self._set_license_locked(True)
+            return
+        self.license_worker = LicenseCheckWorker(
+            self.license_manager,
+            credentials[0],
+            credentials[1],
+        )
+        self.license_worker.checked.connect(
+            lambda state: self._set_license_locked(state.status in {"expired", "blocked", "offline_expired"})
+        )
+        self.license_worker.start()
+
+    def _start_data_sync(self):
+        credentials = self.license_manager.stored_credentials()
+        if not credentials:
+            return
+        self.sync_worker = SyncWorker(
+            self.db,
+            store_id=credentials[0],
+            token=self.license_manager.stored_token(),
+        )
+        self.sync_worker.start()
+
+    def _set_license_locked(self, locked):
+        if locked:
+            if self.license_overlay is None:
+                self.license_overlay = LicenseLockOverlay(self)
+            self.license_overlay.setGeometry(self.rect())
+            self.license_overlay.show()
+            self.license_overlay.raise_()
+        elif self.license_overlay is not None:
+            self.license_overlay.hide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.license_overlay is not None:
+            self.license_overlay.setGeometry(self.rect())
 
     # ------------------------------------------------------------------
     # Full Screen Toggle Handler (F11 / Button)
@@ -490,7 +550,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _build_pages(self):
         self.pos_tab = self._build_pos_tab()
-        self.dashboard_tab = DashboardTab(self.db)
+        self.dashboard_tab = DashboardTab(self.db, self.store_name)
         self.customer_tab = self._build_customer_tab()
         self.stock_tab = StockWindow(self.db, current_user_role=self.user_role)
         self.categories_tab = CategoriesTab(self.db, current_user_role=self.user_role, on_categories_changed=self._on_categories_data_changed)
@@ -677,7 +737,13 @@ class MainWindow(QMainWindow):
                 # open a new main window for the new user
                 new_user = dlg.user
                 new_login_history_id = dlg.login_history_id
-                mw = MainWindow(self.db, new_user, new_login_history_id)
+                mw = MainWindow(
+                    self.db,
+                    new_user,
+                    new_login_history_id,
+                    self.license_manager,
+                    self.store_name,
+                )
                 mw.show()
                 self.close()
             else:
@@ -2519,6 +2585,12 @@ class MainWindow(QMainWindow):
         self.load_sales_analytics_report()
 
     def closeEvent(self, event):
+        if self.sync_worker and self.sync_worker.isRunning():
+            self.sync_worker.stop()
+            self.sync_worker.wait(2000)
+        if self.license_worker and self.license_worker.isRunning():
+            self.license_worker.stop()
+            self.license_worker.wait(2000)
         if self.login_history_id:
             self.db.log_logout(self.login_history_id)
         super().closeEvent(event)

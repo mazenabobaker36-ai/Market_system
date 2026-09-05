@@ -16,9 +16,10 @@ from PyQt5.QtWidgets import (
 
 
 class DashboardTab(QWidget):
-    def __init__(self, db):
+    def __init__(self, db, store_name="سوبرماركت الخير"):
         super().__init__()
         self.db = db
+        self.store_name = store_name
         self._build_ui()
         self.refresh()
 
@@ -40,7 +41,8 @@ class DashboardTab(QWidget):
 
         # Page header (Arabic)
         welcome_row = QHBoxLayout()
-        welcome_lbl = QLabel("لوحة التحكم")
+        self.store_header_label = QLabel(f"لوحة التحكم — {self.store_name}")
+        welcome_lbl = self.store_header_label
         welcome_lbl.setObjectName("pageTitleLabel")
         refresh_btn = QPushButton("تحديث")
         refresh_btn.setProperty("variant", "outline")
