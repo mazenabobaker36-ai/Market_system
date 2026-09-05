@@ -1,10 +1,10 @@
 from pathlib import Path
 from typing import Dict
 
-from weasyprint import HTML
+from PyQt5.QtGui import QTextDocument
+from PyQt5.QtPrintSupport import QPrinter
 
-
-from utils.paths import APP_DIR, REPORTS_DIR, TEMPLATE_PATH
+from utils.paths import REPORTS_DIR, TEMPLATE_PATH
 
 
 def _rows_html(invoice: Dict) -> str:
@@ -45,5 +45,19 @@ def generate_invoice_pdf(invoice: Dict) -> str:
         html_text = html_text.replace(key, value)
 
     output_file = REPORTS_DIR / f"{invoice['invoice_no']}.pdf"
-    HTML(string=html_text, base_url=str(APP_DIR)).write_pdf(str(output_file))
+    export_invoice_to_pdf(html_text, output_file)
     return str(output_file)
+
+
+def export_invoice_to_pdf(html_content: str, output_filepath: Path) -> None:
+    """Render invoice HTML with Qt's native PDF printer (no GTK dependencies)."""
+    output_path = Path(output_filepath)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    document = QTextDocument()
+    document.setHtml(html_content)
+
+    printer = QPrinter(QPrinter.HighResolution)
+    printer.setOutputFormat(QPrinter.PdfFormat)
+    printer.setOutputFileName(str(output_path))
+    document.print_(printer)

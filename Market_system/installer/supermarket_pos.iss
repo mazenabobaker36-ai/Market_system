@@ -14,12 +14,14 @@ AppId={{C7892310-84E1-4BE5-A2B0-04DE6BD34871}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL=https://preeminent-truffle-0ea26e.netlify.app/
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=..\dist_installer
 OutputBaseFilename=Supermarket_POS_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
+WizardStyle=modern
 ; Per-user install: avoids requiring Administrator privileges and prevents permission issues
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
@@ -40,9 +42,10 @@ Source: "..\supermarket_pos\dist\supermarket_pos\*"; DestDir: "{app}"; Flags: ig
 Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
-; Create the persistent data directory, but never place application binaries here
-Name: "{userappdata}\MySupermarketPOS\Data"
-; No uninstall entries are defined for AppData: customer data and config survive removal.
+; Persistent application configuration and database directories.
+; They are outside {app} so upgrades cannot replace customer data.
+Name: "{userappdata}\MySupermarketPOS"; Permissions: users-full
+Name: "{userappdata}\MySupermarketPOS\Data"; Permissions: users-full
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -68,12 +71,12 @@ end;
 procedure InitializeWizard;
 begin
   StorePage := CreateInputQueryPage(
-    wpSelectDir,
+    wpWelcome,
     'بيانات السوبرماركت',
-    'أدخل اسم السوبرماركت أو الفرع',
-    'سيتم حفظ هذا الاسم لاستخدامه داخل التطبيق.'
+    'تخصيص اسم السوبرماركت / الفرع',
+    'يرجى إدخال اسم السوبرماركت أو الفرع ليتم تخصيص الواجهة والطباعة به.'
   );
-  StorePage.Add('اسم السوبرماركت / الفرع:', False);
+  StorePage.Add('اسم السوبرماركت:', False);
   StorePage.Values[0] := 'سوبرماركت الخير';
 end;
 
@@ -95,9 +98,7 @@ begin
     ForceDirectories(ConfigDirectory);
 
     JsonContent :=
-      '{' + #13#10 +
-      '  "store_name": "' + JsonEscape(StoreName) + '"' + #13#10 +
-      '}';
+      '{"store_name": "' + JsonEscape(StoreName) + '"}';
     SaveStringToFile(ConfigFile, UTF8Encode(JsonContent), False);
   end;
 end;

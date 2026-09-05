@@ -28,7 +28,6 @@ hidden_imports = [
     'PyQt5.QtGui',
     'PyQt5.QtWidgets',
     'sqlite3',
-    'weasyprint',
     'qrcode',
     'PIL',
     'PIL.Image',
