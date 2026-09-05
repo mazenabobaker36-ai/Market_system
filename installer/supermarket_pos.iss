@@ -39,7 +39,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Copy all compiled files from PyInstaller's onedir dist directory
 Source: "..\supermarket_pos\dist\supermarket_pos\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Detached updater helper; this executable is built separately and never touches AppData
-Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Dirs]
 ; Persistent application configuration and database directories.
@@ -62,10 +62,11 @@ var
 
 function JsonEscape(Value: String): String;
 begin
-  Result := StringReplace(Value, '\', '\\', [rfReplaceAll]);
-  Result := StringReplace(Result, '"', '\"', [rfReplaceAll]);
-  Result := StringReplace(Result, #13, '\r', [rfReplaceAll]);
-  Result := StringReplace(Result, #10, '\n', [rfReplaceAll]);
+  Result := Value;
+  StringChange(Result, '\', '\\');
+  StringChange(Result, '"', '\"');
+  StringChange(Result, #13, '\r');
+  StringChange(Result, #10, '\n');
 end;
 
 procedure InitializeWizard;

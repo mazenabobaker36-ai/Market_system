@@ -1,8 +1,8 @@
-name: Build Windows Setup
+name: Build Windows Installer
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, The-new ]
   workflow_dispatch:
 
 jobs:
@@ -31,11 +31,17 @@ jobs:
           pip install -r supermarket_pos/requirements.txt
           pip install pyinstaller
 
-      - name: Build Application with PyInstaller
+      - name: Build Executables with PyInstaller
         working-directory: supermarket_pos
         run: |
-          pyinstaller --noconfirm supermarket_pos.spec
-          pyinstaller --noconfirm --onefile --console --name updater updater/updater.py
+          pyinstaller --noconfirm --clean supermarket_pos.spec
+          pyinstaller --noconfirm --clean --onefile --windowed --name updater updater/updater.py
+          if (!(Test-Path "dist\supermarket_pos\supermarket_pos.exe")) {
+            throw "Main application executable was not generated at supermarket_pos\dist\supermarket_pos\supermarket_pos.exe"
+          }
+          if (!(Test-Path "dist\updater.exe")) {
+            throw "Updater executable was not generated at supermarket_pos\dist\updater.exe"
+          }
 
       - name: Compile Windows Setup with Inno Setup
         run: |
