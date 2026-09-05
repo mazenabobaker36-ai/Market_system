@@ -1,4 +1,5 @@
 import hashlib
+import json
 import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -34,6 +35,10 @@ class TelemetryRequest(BaseModel):
 
 class ExtendSubscriptionRequest(BaseModel):
     days: int = Field(default=30, ge=1, le=3650)
+
+
+class SalesSyncRequest(BaseModel):
+    sales: list[Dict[str, Any]] = Field(default_factory=list)
 
 
 def db_connection() -> Iterator[sqlite3.Connection]:
@@ -159,7 +164,6 @@ def sync_telemetry(
     if not x_store_id:
         raise HTTPException(status_code=400, detail="X-Store-ID header is required")
     store_or_404(connection, x_store_id)
-    import json
     connection.execute(
         """
         INSERT INTO telemetry (
@@ -175,6 +179,51 @@ def sync_telemetry(
         ),
     )
     return {"status": "accepted"}
+
+
+@app.post("/api/v1/sync/heartbeat")
+def sync_heartbeat(
+    body: TelemetryRequest,
+    x_store_id: Optional[str] = Header(default=None),
+    connection: sqlite3.Connection = Depends(db_connection),
+):
+    return sync_telemetry(body, x_store_id, connection)
+
+
+@app.post("/api/v1/sync/sales")
+def sync_sales(
+    body: SalesSyncRequest,
+    x_store_id: Optional[str] = Header(default=None),
+    connection: sqlite3.Connection = Depends(db_connection),
+):
+    if not x_store_id:
+        raise HTTPException(status_code=400, detail="X-Store-ID header is required")
+    store_or_404(connection, x_store_id)
+    sales = body.sales
+    total = 0.0
+    for index, sale in enumerate(sales):
+        raw_total = sale.get("total", 0)
+        try:
+            total += float(raw_total or 0)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"sales[{index}].total must be a number",
+            ) from exc
+    connection.execute(
+        """
+        INSERT INTO telemetry (
+            store_id, received_at, total_daily_sales, total_low_stock_count,
+            last_active_cashier_session, app_status, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            x_store_id.strip(), datetime.utcnow().isoformat(),
+            total, 0, None, "sales_sync",
+            json.dumps(body.dict(), ensure_ascii=False),
+        ),
+    )
+    return {"status": "accepted", "received": len(sales)}
 
 
 @app.get("/api/v1/app/check-update")
