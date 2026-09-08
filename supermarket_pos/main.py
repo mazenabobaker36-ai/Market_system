@@ -17,6 +17,7 @@ CURRENT_VERSION = "1.0.0"
 
 def main():
     app = QApplication(sys.argv)
+    # Arabic is the application’s default language and reading direction.
     app.setLayoutDirection(Qt.RightToLeft)
     apply_bootstrap_theme(app)
 

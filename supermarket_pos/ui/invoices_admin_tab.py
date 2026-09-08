@@ -1,10 +1,15 @@
+import csv
 import json
 from io import BytesIO
 
 import qrcode
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QDateEdit,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -21,10 +26,51 @@ from PyQt5.QtWidgets import (
 from ui.invoice_view_dialog import InvoiceViewDialog
 
 
+class RefundDialog(QDialog):
+    """Confirmation dialog showing the invoice before a full refund."""
+
+    def __init__(self, invoice, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("إرجاع الفاتورة / استرداد")
+        self.setLayoutDirection(Qt.RightToLeft)
+        self.setModal(True)
+        self.resize(560, 440)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"رقم الفاتورة: {invoice.get('invoice_no', '-') }"))
+        layout.addWidget(QLabel(f"العميل: {invoice.get('customer_name') or 'عميل مباشر'}"))
+        layout.addWidget(QLabel(f"التاريخ: {invoice.get('created_at', '-')}"))
+        layout.addWidget(QLabel(f"الإجمالي القابل للاسترداد: {float(invoice.get('total') or 0):.2f} ج.م"))
+
+        items_table = QTableWidget(0, 4)
+        items_table.setHorizontalHeaderLabels(["المنتج", "الكمية", "سعر الوحدة", "الإجمالي الفرعي"])
+        items_table.verticalHeader().setVisible(False)
+        items_table.horizontalHeader().setStretchLastSection(True)
+        items = invoice.get("items", [])
+        items_table.setRowCount(len(items))
+        for row, item in enumerate(items):
+            items_table.setItem(row, 0, QTableWidgetItem(item.get("name") or "-"))
+            items_table.setItem(row, 1, QTableWidgetItem(str(item.get("qty", 0))))
+            items_table.setItem(row, 2, QTableWidgetItem(f"{float(item.get('manual_price') or 0):.2f}"))
+            items_table.setItem(row, 3, QTableWidgetItem(f"{float(item.get('subtotal') or 0):.2f}"))
+        layout.addWidget(items_table)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        confirm = buttons.addButton("تأكيد الاسترجاع", QDialogButtonBox.AcceptRole)
+        confirm.setProperty("variant", "danger")
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+
 class InvoicesAdminTab(QWidget):
-    def __init__(self, db):
+    def __init__(self, db, current_user_role="admin", on_refund=None):
         super().__init__()
         self.db = db
+        self.current_user_role = (current_user_role or "").strip().lower()
+        self.is_saler = self.current_user_role in {"saler", "seller", "بائع"}
+        self._date_filter_active = False
+        self.on_refund = on_refund
         self._build_ui()
         self.refresh_invoices()
 
@@ -54,22 +100,53 @@ class InvoicesAdminTab(QWidget):
         self.view_btn.setObjectName("invoiceViewBtn")
         self.view_btn.clicked.connect(self.open_selected_invoice)
 
+        self.export_btn = QPushButton("📥 تصدير السجل")
+        self.export_btn.setProperty("variant", "outline")
+        self.export_btn.clicked.connect(self.export_invoices)
+
         search_row.addWidget(self.search_input)
         search_row.addWidget(self.view_btn)
+        search_row.addWidget(self.export_btn)
+
+        date_row = QHBoxLayout()
+        date_row.addWidget(QLabel("من تاريخ:"))
+        self.start_date_edit = QDateEdit(QDate(2000, 1, 1))
+        self.start_date_edit.setCalendarPopup(True)
+        date_row.addWidget(self.start_date_edit)
+        date_row.addWidget(QLabel("إلى تاريخ:"))
+        self.end_date_edit = QDateEdit(QDate.currentDate())
+        self.end_date_edit.setCalendarPopup(True)
+        date_row.addWidget(self.end_date_edit)
+        self.apply_date_btn = QPushButton("تطبيق التاريخ")
+        self.apply_date_btn.setProperty("variant", "primary")
+        self.apply_date_btn.clicked.connect(self._apply_date_filter)
+        date_row.addWidget(self.apply_date_btn)
+
+        if self.is_saler:
+            self.start_date_edit.setDate(QDate.currentDate().addDays(-1))
+            self.end_date_edit.setDate(QDate.currentDate())
+            for control in (self.start_date_edit, self.end_date_edit, self.apply_date_btn):
+                control.setEnabled(False)
+            self.export_btn.setEnabled(False)
+            self.export_btn.setVisible(False)
 
         # Columns visually: Cashier | Total | Date/Time | Invoice No
         # Internally keep invoice_no at column 0 to preserve selection logic; _selected_invoice_id
         # will search the row for the item with UserRole data to remain robust.
         # Left table: Invoices list
-        self.invoices_table = QTableWidget(0, 4)
-        self.invoices_table.setHorizontalHeaderLabels(["اسم الكاشير", "إجمالي المبلغ", "التاريخ/الوقت", "رقم الفاتورة"])
+        self.invoices_table = QTableWidget(0, 6)
+        self.invoices_table.setHorizontalHeaderLabels([
+            "اسم الكاشير", "إجمالي المبلغ", "التاريخ/الوقت", "رقم الفاتورة", "الحالة", "الإجراءات"
+        ])
         self.invoices_table.verticalHeader().setVisible(False)
         self.invoices_table.verticalHeader().setDefaultSectionSize(32)
         inv_head = self.invoices_table.horizontalHeader()
         inv_head.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         inv_head.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         inv_head.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        inv_head.setSectionResizeMode(3, QHeaderView.Stretch)
+        inv_head.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        inv_head.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        inv_head.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.invoices_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.invoices_table.setSelectionMode(QTableWidget.SingleSelection)
         self.invoices_table.itemSelectionChanged.connect(self._on_invoice_selected)
@@ -78,6 +155,7 @@ class InvoicesAdminTab(QWidget):
 
         left_layout.addWidget(left_title)
         left_layout.addLayout(search_row)
+        left_layout.addLayout(date_row)
         left_layout.addWidget(self.invoices_table)
 
         # Right: Receipt details card
@@ -186,7 +264,14 @@ class InvoicesAdminTab(QWidget):
         root.addWidget(right_wrapper, 1)
 
     def refresh_invoices(self):
-        rows = self.db.list_invoices_admin(self.search_input.text())
+        start_date = self.start_date_edit.date().toString("yyyy-MM-dd")
+        end_date = self.end_date_edit.date().toString("yyyy-MM-dd")
+        rows = self.db.list_invoices_admin(
+            self.search_input.text(),
+            role=self.current_user_role,
+            start_date=start_date if self._date_filter_active and not self.is_saler else None,
+            end_date=end_date if self._date_filter_active and not self.is_saler else None,
+        )
         self.invoices_table.setRowCount(len(rows))
 
         for i, row in enumerate(rows):
@@ -194,10 +279,19 @@ class InvoicesAdminTab(QWidget):
             cashier_item = QTableWidgetItem(row.get("cashier_name") or "-")
             total_item = QTableWidgetItem(f"{row['total']:.2f}")
             datetime_item = QTableWidgetItem(row["created_at"])
-            invoice_no_item = QTableWidgetItem(row["invoice_no"])  # will carry invoice id in UserRole
+            invoice_no_item = QTableWidgetItem(row["invoice_no"])  # carries invoice id in UserRole
             invoice_no_item.setData(Qt.UserRole, row["id"])
+            status = row.get("status") or "Completed"
+            is_refunded = status in {"Refunded", "مرتجعة", "Partially Refunded", "مرتجعة جزئياً"}
+            status_label = QLabel("مرتجعة" if is_refunded else "مكتملة")
+            status_label.setAlignment(Qt.AlignCenter)
+            status_label.setStyleSheet(
+                "QLabel { color: #ffffff; background: #dc2626; border-radius: 9px; padding: 3px 8px; font-weight: 700; }"
+                if is_refunded
+                else "QLabel { color: #166534; background: #dcfce7; border-radius: 9px; padding: 3px 8px; font-weight: 700; }"
+            )
 
-            # Place items in columns 0..3 mapping to visual layout
+            # Place items in columns 0..5 mapping to visual layout
             # Column 0: Cashier
             # Column 1: Total
             # Column 2: Date/Time
@@ -206,6 +300,16 @@ class InvoicesAdminTab(QWidget):
             self.invoices_table.setItem(i, 1, total_item)
             self.invoices_table.setItem(i, 2, datetime_item)
             self.invoices_table.setItem(i, 3, invoice_no_item)
+            self.invoices_table.setCellWidget(i, 4, status_label)
+
+            refund_btn = QPushButton("🔄 استرجاع")
+            refund_btn.setProperty("variant", "danger")
+            refund_btn.setCursor(Qt.PointingHandCursor)
+            refund_btn.clicked.connect(lambda _, invoice_id=row["id"]: self.refund_invoice(invoice_id))
+            if is_refunded or self.is_saler:
+                refund_btn.setEnabled(False)
+                refund_btn.setVisible(False)
+            self.invoices_table.setCellWidget(i, 5, refund_btn)
 
         self.invoices_table.resizeColumnsToContents()
 
@@ -213,6 +317,10 @@ class InvoicesAdminTab(QWidget):
             self.invoices_table.selectRow(0)
         else:
             self._clear_preview()
+
+    def _apply_date_filter(self):
+        self._date_filter_active = True
+        self.refresh_invoices()
 
     def _clear_preview(self):
         self.qr_label.setText("لا يوجد رمز QR")
@@ -250,6 +358,61 @@ class InvoicesAdminTab(QWidget):
 
         invoice = self.db.get_invoice_details(int(invoice_id))
         self._render_preview(invoice)
+
+    def refund_invoice(self, invoice_id):
+        if self.is_saler:
+            QMessageBox.warning(self, "صلاحية غير كافية", "حساب البائع للعرض فقط ولا يمكنه استرجاع الفواتير.")
+            return
+        invoice = self.db.get_invoice_details(int(invoice_id))
+        if not invoice or invoice.get("status") in {"Refunded", "مرتجعة", "Partially Refunded", "مرتجعة جزئياً"}:
+            QMessageBox.information(self, "تنبيه", "تم استرجاع هذه الفاتورة مسبقاً")
+            return
+
+        dialog = RefundDialog(invoice, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        try:
+            result = self.db.refund_invoice(int(invoice_id), role=self.current_user_role)
+            QMessageBox.information(
+                self,
+                "تم الاسترجاع",
+                "تم إتمام عملية الاسترجاع وإعادة المنتجات إلى المخزون بنجاح",
+            )
+            self.refresh_invoices()
+            if callable(self.on_refund):
+                self.on_refund(result)
+        except Exception as exc:
+            QMessageBox.critical(self, "خطأ في الاسترجاع", str(exc))
+
+    def export_invoices(self):
+        if self.is_saler:
+            QMessageBox.warning(self, "صلاحية غير كافية", "لا يملك البائع صلاحية تصدير سجل الفواتير.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "تصدير سجل الفواتير", "سجل_الفواتير.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        rows = self.db.list_invoices_admin(
+            self.search_input.text(),
+            role=self.current_user_role,
+            start_date=(self.start_date_edit.date().toString("yyyy-MM-dd") if self._date_filter_active else None),
+            end_date=(self.end_date_edit.date().toString("yyyy-MM-dd") if self._date_filter_active else None),
+        )
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as output:
+                writer = csv.writer(output)
+                writer.writerow(["رقم الفاتورة", "الكاشير", "التاريخ", "الإجمالي", "الحالة"])
+                for row in rows:
+                    writer.writerow([
+                        row.get("invoice_no", "-"), row.get("cashier_name", "-"),
+                        row.get("created_at", "-"), row.get("total", 0),
+                        "مرتجعة" if row.get("status") == "Refunded" else "مكتملة",
+                    ])
+            QMessageBox.information(self, "تم التصدير", "تم تصدير سجل الفواتير بنجاح.")
+        except OSError as exc:
+            QMessageBox.critical(self, "خطأ في التصدير", str(exc))
 
     def open_selected_invoice(self):
         invoice_id = self._selected_invoice_id()

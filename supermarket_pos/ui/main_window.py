@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from typing import Optional
+
 from PyQt5.QtCore import QDate, QSize, QSizeF, Qt
 from datetime import datetime, date, timedelta
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QTextDocument
@@ -276,7 +278,9 @@ class MainWindow(QMainWindow):
             "owner": "owner",
             "مالك": "owner",
             "admin": "admin",
+            "manager": "admin",
             "مدير": "admin",
+            "مدير مباشر": "admin",
             "saler": "saler",
             "seller": "saler",
             "بائع": "saler",
@@ -395,6 +399,16 @@ class MainWindow(QMainWindow):
                 self.fullscreen_btn.setText("⛶ ملء الشاشة (F11)")
                 self.fullscreen_btn.setToolTip("تفعيل وضع ملء الشاشة (F11)")
 
+    def _on_invoice_refunded(self, refund_result):
+        """Refresh all views affected by an invoice refund."""
+        try:
+            self.load_products_side_panel()
+            self.stock_tab.refresh_table()
+            self.dashboard_tab.refresh()
+            self.refresh_reports()
+        except Exception:
+            pass
+
     def _on_categories_data_changed(self):
         """Triggered when categories are added, modified, or deleted in CategoriesTab."""
         try:
@@ -435,7 +449,7 @@ class MainWindow(QMainWindow):
         self.toggle_btn.clicked.connect(self.toggle_sidebar)
         self.toggle_btn.setObjectName("sidebarToggleBtn")
 
-        self.brand_label = QLabel("🛒 Supermarket POS")
+        self.brand_label = QLabel("🛒 نظام نقاط البيع")
         self.brand_label.setObjectName("pageTitleLabel")
 
         sidebar_layout.addWidget(self.toggle_btn)
@@ -494,6 +508,15 @@ class MainWindow(QMainWindow):
         self.nav_buttons[key] = {"button": btn, "index": index, "title": title}
 
     def switch_page(self, key: str):
+        # Customers and suppliers are restricted to Owner/Admin; enforce this at routing too.
+        if key == "customers" and self.user_role == "saler":
+            QMessageBox.warning(
+                self,
+                "صلاحية غير كافية",
+                "عذراً، هذه الصفحة مخصصة للمدير المباشر والمالك فقط."
+            )
+            return
+
         # RBAC Check: User Management is reserved exclusively for System Owner
         if key == "users" and self.user_role != "owner":
             QMessageBox.warning(
@@ -533,7 +556,7 @@ class MainWindow(QMainWindow):
             text = "•" if self.sidebar_collapsed else meta["title"]
             meta["button"].setText(text)
 
-        self.brand_label.setText("🛒" if self.sidebar_collapsed else "🛒 Supermarket POS")
+        self.brand_label.setText("🛒" if self.sidebar_collapsed else "🛒 نظام نقاط البيع")
         self.toggle_btn.setText("☰" if self.sidebar_collapsed else "☰ القائمة")
         self.profile_badge.setVisible(not self.sidebar_collapsed)
 
@@ -566,22 +589,23 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self._add_nav_item("dashboard", "📊 لوحة التحكم", self.dashboard_tab)
-        self._add_nav_item("customers", "👥 العملاء", self.customer_tab)
-        self._add_nav_item("stock", "📦 المخزون", self.stock_tab)
+        self._add_nav_item("customers", "👥 العملاء والموردين", self.customer_tab)
+        self._add_nav_item("stock", "📦 المخزون والمنتجات", self.stock_tab)
         self._add_nav_item("categories", "🏷️ الأقسام والفئات", self.categories_tab)
-        self._add_nav_item("reports", "📈 التقارير", self.reports_tab)
+        self._add_nav_item("reports", "📈 التقارير والمؤشرات", self.reports_tab)
 
-        self.invoices_admin_tab = None
+        self.invoices_admin_tab = InvoicesAdminTab(
+            self.db,
+            current_user_role=self.user_role,
+            on_refund=self._on_invoice_refunded,
+        )
+        self._add_nav_item("invoices", "👁️ الفواتير والمبيعات", self.invoices_admin_tab)
         self.user_admin_tab = None
-
-        if self.user_role in {"admin", "owner"}:
-            self.invoices_admin_tab = InvoicesAdminTab(self.db)
-            self._add_nav_item("invoices", "👁️ الفواتير وسجل المبيعات", self.invoices_admin_tab)
 
         # Restrict User Management exclusively to Owner
         if self.user_role == "owner":
             self.user_admin_tab = UserAdminTab(self.db, self.current_user)
-            self._add_nav_item("users", "🛡️ إدارة المستخدمين", self.user_admin_tab)
+            self._add_nav_item("users", "🛡️ إدارة المستخدمين والإعدادات", self.user_admin_tab)
 
         # Hook dashboard quick links to invoices/reports pages
         target_tab = "invoices" if self.invoices_admin_tab else "reports"
@@ -672,7 +696,10 @@ class MainWindow(QMainWindow):
     def _apply_role_permissions(self):
         """Configure sidebar navigation and access permissions based on role."""
         if self.user_role in {"saler", "seller", "بائع"}:
-            # Saler role: Read-only access to Stock, full access to POS and Customers
+            # Saler role: read-only stock access; customers/suppliers are restricted.
+            if "customers" in self.nav_buttons:
+                self.nav_buttons["customers"]["button"].setVisible(False)
+                self.nav_buttons["customers"]["button"].setEnabled(False)
             if "stock" in self.nav_buttons:
                 self.nav_buttons["stock"]["button"].setEnabled(True)
                 self.nav_buttons["stock"]["button"].setVisible(True)
@@ -682,7 +709,8 @@ class MainWindow(QMainWindow):
             if "dashboard" in self.nav_buttons:
                 self.nav_buttons["dashboard"]["button"].setVisible(False)
             if "invoices" in self.nav_buttons:
-                self.nav_buttons["invoices"]["button"].setVisible(False)
+                self.nav_buttons["invoices"]["button"].setVisible(True)
+                self.nav_buttons["invoices"]["button"].setEnabled(True)
             if "users" in self.nav_buttons:
                 self.nav_buttons["users"]["button"].setVisible(False)
                 self.nav_buttons["users"]["button"].setEnabled(False)
@@ -769,11 +797,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(12)
 
-        scan_box = QGroupBox("مسح رمز QR / الباركود")
+        scan_box = QGroupBox("مسح رمز الاستجابة السريعة / الباركود")
         scan_layout = QGridLayout(scan_box)
 
         self.barcode_input = QLineEdit()
-        self.barcode_input.setPlaceholderText("امسح الباركود/QR ثم اضغط Enter")
+        self.barcode_input.setPlaceholderText("امسح الباركود ثم اضغط إدخال")
         self.barcode_input.returnPressed.connect(self.on_scan_barcode)
 
         self.product_label = QLabel("المنتج: -")
@@ -792,7 +820,7 @@ class MainWindow(QMainWindow):
         self.add_btn.setProperty("variant", "primary")
         self.add_btn.clicked.connect(self.add_item_to_cart)
 
-        scan_layout.addWidget(QLabel("QR / باركود (الخطوة 1):"), 0, 0)
+        scan_layout.addWidget(QLabel("الباركوود (الخطوة 1):"), 0, 0)
         scan_layout.addWidget(self.barcode_input, 0, 1, 1, 3)
         scan_layout.addWidget(self.product_label, 1, 0, 1, 4)
         scan_layout.addWidget(QLabel("الكمية (الخطوة 2):"), 2, 0)
@@ -804,15 +832,25 @@ class MainWindow(QMainWindow):
         self.cart_table = QTableWidget(0, 6)
         self.cart_table.setHorizontalHeaderLabels([
             "معرف المنتج",
-            "الباركود",
+            "الباركوود",
             "اسم المنتج",
             "الكمية",
-            "سعر الوحدة",
-            "الإجمالي الفرعي",
+            "السعر",
+            "الإجمالي",
         ])
         self.cart_table.setAlternatingRowColors(True)
         self.cart_table.verticalHeader().setVisible(False)
         self.cart_table.itemChanged.connect(self._on_cart_item_changed)
+        self.cart_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.cart_table.setSelectionMode(QTableWidget.SingleSelection)
+
+        self.remove_cart_item_btn = QPushButton("🗑️ حذف المحدد")
+        self.remove_cart_item_btn.setProperty("variant", "danger")
+        self.remove_cart_item_btn.setToolTip("حذف عنصر واحد من السلة")
+        self.remove_cart_item_btn.clicked.connect(self.remove_selected_cart_item)
+        cart_actions = QHBoxLayout()
+        cart_actions.addStretch()
+        cart_actions.addWidget(self.remove_cart_item_btn)
 
         # Payment Section with separate Subtotal, Discount/Adjustment, and Final Total
         payment_box = QGroupBox("الدفع والفوترة")
@@ -867,6 +905,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(scan_box)
         layout.addWidget(self.cart_table)
+        layout.addLayout(cart_actions)
         layout.addWidget(payment_box)
 
         # Product side panel (right) with Full Arabic Localization (RTL)
@@ -882,26 +921,12 @@ class MainWindow(QMainWindow):
         self.product_search_input.textChanged.connect(lambda txt: self._filter_products_side(txt))
         panel_layout.addWidget(self.product_search_input)
 
-        # Dynamic Category Filter Tabs / Pills in a scrollable horizontal container
-        self.category_scroll = QScrollArea()
-        self.category_scroll.setFixedHeight(46)
-        self.category_scroll.setWidgetResizable(True)
-        self.category_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.category_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.category_scroll.setFrameShape(QFrame.NoFrame)
-        self.category_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        # Single category dropdown at the top of the product side panel.
+        self.category_combo = QComboBox()
+        self.category_combo.setPlaceholderText("اختر التصنيف")
+        self.category_combo.currentTextChanged.connect(self._on_category_changed)
+        panel_layout.addWidget(self.category_combo)
 
-        self.category_pills_container = QWidget()
-        self.category_pills_container.setStyleSheet("background: transparent;")
-        self.category_pills_layout = QHBoxLayout(self.category_pills_container)
-        self.category_pills_layout.setContentsMargins(0, 0, 0, 0)
-        self.category_pills_layout.setSpacing(6)
-        self.category_pills_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.category_scroll.setWidget(self.category_pills_container)
-
-        panel_layout.addWidget(self.category_scroll)
-
-        self.category_buttons = {}
         self.active_category = "الكل"
 
         # Multi-column Clean Grid Area for Products
@@ -933,47 +958,33 @@ class MainWindow(QMainWindow):
 
         return root
 
-    def _refresh_pos_category_pills(self):
-        """Dynamically generate category filter tabs/buttons based on categories present in the database."""
+    def _refresh_pos_category_dropdown(self):
+        """Load distinct product categories into the POS category dropdown."""
         try:
-            db_cats = self.db.get_distinct_categories()
+            with self.db._connect() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT category FROM products "
+                    "WHERE category IS NOT NULL AND category != '' "
+                    "ORDER BY category COLLATE NOCASE"
+                ).fetchall()
+            categories = [str(row[0]).strip() for row in rows if row[0] and str(row[0]).strip()]
         except Exception:
-            db_cats = ["مشروبات", "أطعمة", "مخبوزات", "منظفات", "أخرى"]
+            categories = []
 
-        # Ensure 'الكل' is always the first tab
-        all_cats = ["الكل"] + [c for c in db_cats if c != "الكل"]
+        categories = ["الكل"] + [category for category in categories if category != "الكل"]
+        current = self.active_category if self.active_category in categories else "الكل"
+        self.category_combo.blockSignals(True)
+        self.category_combo.clear()
+        self.category_combo.addItems(categories)
+        self.category_combo.setCurrentText(current)
+        self.category_combo.blockSignals(False)
+        self.active_category = current
 
-        # Clear existing buttons
-        while self.category_pills_layout.count():
-            item = self.category_pills_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
-
-        self.category_buttons = {}
-        if self.active_category not in all_cats:
-            self.active_category = "الكل"
-
-        for cat in all_cats:
-            btn = QPushButton(cat)
-            btn.setObjectName("categoryTabBtn")
-            btn.setCheckable(True)
-            btn.setChecked(cat == self.active_category)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked, c=cat: self._on_category_pill_clicked(c))
-            self.category_pills_layout.addWidget(btn)
-            self.category_buttons[cat] = btn
-
-        self.category_pills_layout.addStretch()
-
-    def _on_category_pill_clicked(self, category: str):
-        """Handle category tab click: update active state and filter products grid."""
-        self.active_category = category
-        for c, btn in self.category_buttons.items():
-            btn.setChecked(c == category)
+    def _on_category_changed(self, category: str):
+        """Filter the product grid immediately when the dropdown selection changes."""
+        self.active_category = category or "الكل"
         search_txt = self.product_search_input.text() if hasattr(self, "product_search_input") else ""
-        self._filter_products_side(search_txt, category)
+        self._filter_products_side(search_txt, self.active_category)
 
     def load_products_side_panel(self):
         """Reload products from database and refresh dynamic category tabs and square cards grid."""
@@ -983,7 +994,7 @@ class MainWindow(QMainWindow):
             products = []
 
         self._all_products = products
-        self._refresh_pos_category_pills()
+        self._refresh_pos_category_dropdown()
         search_txt = self.product_search_input.text() if hasattr(self, "product_search_input") else ""
         self._filter_products_side(search_txt, getattr(self, "active_category", "الكل"))
 
@@ -1091,9 +1102,10 @@ class MainWindow(QMainWindow):
                 continue
             filtered.append(p)
 
-        # update category button check states
-        for c, btn in getattr(self, "category_buttons", {}).items():
-            btn.setChecked(c == cat_filter)
+        if hasattr(self, "category_combo") and self.category_combo.currentText() != cat_filter:
+            self.category_combo.blockSignals(True)
+            self.category_combo.setCurrentText(cat_filter)
+            self.category_combo.blockSignals(False)
 
         self._render_products(filtered)
 
@@ -1733,6 +1745,18 @@ class MainWindow(QMainWindow):
         self.cart = []
         self._final_total_overridden = False
         self.refresh_cart()
+
+    def remove_selected_cart_item(self):
+        """Remove only the selected cart row and recalculate totals."""
+        row = self.cart_table.currentRow()
+        if row < 0 or row >= len(self.cart):
+            QMessageBox.warning(self, "اختيار", "يرجى تحديد عنصر من السلة أولاً")
+            return
+        self.cart.pop(row)
+        self._final_total_overridden = False if not self.cart else self._final_total_overridden
+        self.refresh_cart()
+        if self.cart:
+            self.cart_table.selectRow(min(row, len(self.cart) - 1))
 
     def _on_receipt_toggle_changed(self, checked: bool):
         """Handle receipt mode toggle switch: updates button label and tooltips."""

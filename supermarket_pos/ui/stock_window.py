@@ -68,7 +68,7 @@ class StockWindow(QWidget):
 
         self.add_btn = QPushButton("+ إضافة منتج جديد")
         self.add_btn.setProperty("variant", "primary")
-        self.add_btn.clicked.connect(lambda: (self._clear_form(), self.barcode_input.setFocus()))
+        self.add_btn.clicked.connect(self._show_form)
 
         header_row.addWidget(page_title)
         header_row.addStretch()
@@ -202,9 +202,9 @@ class StockWindow(QWidget):
         self.delete_btn.setProperty("variant", "danger")
         self.delete_btn.clicked.connect(self.delete_selected_item)
 
-        self.form_clear_btn = QPushButton("مسح")
+        self.form_clear_btn = QPushButton("إلغاء")
         self.form_clear_btn.setProperty("variant", "outline")
-        self.form_clear_btn.clicked.connect(self._clear_form)
+        self.form_clear_btn.clicked.connect(self._cancel_form)
 
         self.refresh_btn = QPushButton("تحديث الجدول")
         self.refresh_btn.setProperty("variant", "outline")
@@ -219,11 +219,13 @@ class StockWindow(QWidget):
 
         grid.addLayout(btn_row, 3, 0, 1, 5)
         root_layout.addWidget(self.form_box)
+        # Keep the inventory table expanded by default; the form opens on demand.
+        self.form_box.setVisible(False)
 
         # Table
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
-            "ID", "BARCODE", "PRODUCT NAME", "CATEGORY", "STOCK", "PRICE", "EXPIRY",
+            "المعرف", "الباركوود", "اسم المنتج", "التصنيف", "المخزون", "السعر", "تاريخ الانتهاء",
         ])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
@@ -368,9 +370,11 @@ class StockWindow(QWidget):
         role = (self.current_user_role or "").strip().lower()
         is_saler = role in {"saler", "seller", "بائع"}
 
-        # Hide top data entry form and bulk import for saler
+        # Salers never receive the data-entry form. For other roles, preserve
+        # the current collapsed/expanded state instead of opening it on load.
         if hasattr(self, "form_box"):
-            self.form_box.setVisible(not is_saler)
+            if is_saler:
+                self.form_box.setVisible(False)
             self.form_box.setEnabled(not is_saler)
 
         if hasattr(self, "excel_info_btn"):
@@ -417,6 +421,17 @@ class StockWindow(QWidget):
     def _clear_search(self):
         self.search_input.clear()
         self.filter_table()
+
+    def _show_form(self):
+        if (self.current_user_role or "").strip().lower() in {"saler", "seller", "بائع"}:
+            return
+        self._clear_form()
+        self.form_box.setVisible(True)
+        self.barcode_input.setFocus()
+
+    def _cancel_form(self):
+        self._clear_form()
+        self.form_box.setVisible(False)
 
     def _clear_form(self):
         self.barcode_input.clear()
@@ -488,6 +503,7 @@ class StockWindow(QWidget):
         self._display_image_preview(img)
 
         self.save_btn.setText("تحديث المنتج")
+        self.form_box.setVisible(True)
 
     def filter_table(self):
         query = self.search_input.text().strip().lower()
@@ -567,6 +583,7 @@ class StockWindow(QWidget):
             self.refresh_table()
             self._refresh_categories_combo()
             self._clear_form()
+            self.form_box.setVisible(False)
 
             # Notify parent main window to reload POS side panel and categories tab
             try:
@@ -821,6 +838,7 @@ class StockWindow(QWidget):
             QMessageBox.information(self, "تم الحذف", "تم حذف المنتج بنجاح")
             self.refresh_table()
             self._clear_form()
+            self.form_box.setVisible(False)
 
             # Reload POS side panel
             try:

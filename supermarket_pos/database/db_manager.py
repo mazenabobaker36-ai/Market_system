@@ -144,6 +144,8 @@ class DBManager:
                     user_id INTEGER,
                     customer_id INTEGER,
                     discount REAL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'Completed',
+                    refunded_at TEXT,
                     FOREIGN KEY(user_id) REFERENCES Users(id),
                     FOREIGN KEY(customer_id) REFERENCES Customers(id)
                 )
@@ -158,6 +160,10 @@ class DBManager:
                     cur.execute("ALTER TABLE Invoices ADD COLUMN discount REAL DEFAULT 0")
                 if "synced" not in inv_cols:
                     cur.execute("ALTER TABLE Invoices ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")
+                if "status" not in inv_cols:
+                    cur.execute("ALTER TABLE Invoices ADD COLUMN status TEXT NOT NULL DEFAULT 'Completed'")
+                if "refunded_at" not in inv_cols:
+                    cur.execute("ALTER TABLE Invoices ADD COLUMN refunded_at TEXT")
             except Exception:
                 pass
 
@@ -830,28 +836,107 @@ class DBManager:
         }
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
-    def list_invoices_admin(self, search_text: str = "") -> List[Dict[str, Any]]:
+    def list_invoices_admin(
+        self,
+        search_text: str = "",
+        role: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List invoices with server-side RBAC date enforcement.
+
+        Salers are always limited to today and yesterday, regardless of any UI
+        date values supplied by a caller.
+        """
         with self._connect() as conn:
             query = """
-                SELECT i.id, i.invoice_no, i.created_at, i.total, i.qr_data, u.username AS cashier_name
+                SELECT i.id, i.invoice_no, i.created_at, i.total, i.status, i.refunded_at,
+                       i.qr_data, c.name AS customer_name, u.username AS cashier_name
                 FROM Invoices i
+                LEFT JOIN Customers c ON c.id = i.customer_id
                 LEFT JOIN Users u ON u.id = i.user_id
             """
+            conditions: List[str] = []
             params: List[Any] = []
+            normalized_role = (role or "").strip().lower()
+            if normalized_role in {"saler", "seller", "بائع"}:
+                conditions.append("DATE(i.created_at) >= DATE('now', '-1 day')")
+            else:
+                if start_date:
+                    conditions.append("DATE(i.created_at) >= DATE(?)")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("DATE(i.created_at) <= DATE(?)")
+                    params.append(end_date)
 
             txt = (search_text or "").strip()
             if txt:
-                query += """
-                    WHERE i.invoice_no LIKE ?
-                    OR i.created_at LIKE ?
-                    OR COALESCE(u.username, '') LIKE ?
-                """
+                conditions.append(
+                    "(i.invoice_no LIKE ? OR i.created_at LIKE ? OR COALESCE(u.username, '') LIKE ?)"
+                )
                 like = f"%{txt}%"
                 params.extend([like, like, like])
 
-            query += " ORDER BY i.id DESC"
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY i.created_at DESC, i.id DESC"
             rows = conn.execute(query, tuple(params)).fetchall()
             return [dict(r) for r in rows]
+
+    def refund_invoice(self, invoice_id: int, role: Optional[str] = None) -> Dict[str, Any]:
+        """Restock a completed invoice and mark it refunded atomically."""
+        if (role or "").strip().lower() in {"saler", "seller", "بائع"}:
+            raise PermissionError("حساب البائع للعرض فقط ولا يمكنه استرجاع الفواتير")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as conn:
+            invoice = conn.execute(
+                "SELECT id, invoice_no, status, total FROM Invoices WHERE id = ?",
+                (invoice_id,),
+            ).fetchone()
+            if not invoice:
+                raise ValueError("الفاتورة غير موجودة")
+            if invoice["status"] in {"Refunded", "Partially Refunded"}:
+                raise ValueError("تم استرجاع هذه الفاتورة مسبقاً")
+
+            items = conn.execute(
+                """
+                SELECT ii.product_id, ii.qty, ii.subtotal, p.barcode, p.name
+                FROM Invoice_Items ii
+                JOIN Products p ON p.id = ii.product_id
+                WHERE ii.invoice_id = ?
+                """,
+                (invoice_id,),
+            ).fetchall()
+            if not items:
+                raise ValueError("لا توجد أصناف مرتبطة بهذه الفاتورة")
+
+            for item in items:
+                # Use the product barcode as the stable restocking key.
+                updated = conn.execute(
+                    "UPDATE Products SET stock_qty = stock_qty + ? WHERE barcode = ?",
+                    (float(item["qty"]), item["barcode"]),
+                ).rowcount
+                if not updated:
+                    raise ValueError(f"المنتج غير موجود: {item['barcode']}")
+                conn.execute(
+                    """
+                    INSERT INTO Stock_Movements
+                        (product_id, qty, move_type, reference, created_at)
+                    VALUES (?, ?, 'IN', ?, ?)
+                    """,
+                    (item["product_id"], float(item["qty"]), f"Refund {invoice['invoice_no']}", now),
+                )
+
+            conn.execute(
+                "UPDATE Invoices SET status = 'Refunded', total = 0, refunded_at = ? WHERE id = ?",
+                (now, invoice_id),
+            )
+            return {
+                "invoice_id": invoice_id,
+                "invoice_no": invoice["invoice_no"],
+                "refunded_total": float(invoice["total"] or 0),
+                "refunded_at": now,
+            }
 
     def get_invoice_details(self, invoice_id: int) -> Dict[str, Any]:
         with self._connect() as conn:

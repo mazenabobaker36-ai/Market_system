@@ -47,7 +47,7 @@ class CategoriesTab(QWidget):
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
 
-        title = QLabel("🏷️ إدارة الأقسام والفئات (Categories Management)")
+        title = QLabel("🏷️ إدارة الأقسام والفئات")
         title.setObjectName("pageTitleLabel")
         subtitle = QLabel("إضافة وتعديل وحذف أقسام وتصنيفات المنتجات وتنظيم المخزون ونقاط البيع")
         subtitle.setObjectName("pageSubtitleLabel")

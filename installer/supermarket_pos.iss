@@ -36,10 +36,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; Copy all compiled files from PyInstaller's onedir dist directory
+; Paths are relative to this script (installer\), and PyInstaller runs in supermarket_pos\.
+; Main app folder contents
 Source: "..\supermarket_pos\dist\supermarket_pos\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Detached updater helper; this executable is built separately and never touches AppData
-Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Updater executable (PyInstaller --onefile output: supermarket_pos\dist\updater.exe)
+Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Dirs]
 ; Persistent application configuration and database directories.
