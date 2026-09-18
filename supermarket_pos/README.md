@@ -46,7 +46,7 @@ python main.py
 عند أول تشغيل، تظهر نافذة تفعيل تطلب `Store_ID` و`License_Key` وترسلها إلى:
 
 ```text
-https://your-domain.com/api/v1/license/verify
+https://preeminent-truffle-0ea26e.netlify.app/api/v1/license/verify
 ```
 
 يمكن تغيير عنوان الخدمة دون تعديل الكود عبر متغير البيئة `POS_LICENSE_VERIFY_URL`.

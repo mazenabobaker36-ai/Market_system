@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}المستخدمون | منصة الاشتراكات{% endblock %}
+{% block page_heading %}المستخدمون{% endblock %}
+{% block content %}
+<div class="card rounded-3 p-4 mb-4">
+  <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-4">
+    <div><h2 class="h5 fw-bold mb-1">مستخدمو لوحة الإدارة</h2><div class="text-secondary small">إدارة الحسابات والصلاحيات الممنوحة للوصول إلى المنصة</div></div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userModal">＋ إضافة مستخدم</button>
+  </div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الدور</th><th>تاريخ الإنشاء</th><th>الصلاحيات</th></tr></thead><tbody>
+  {% for user in users %}<tr><td class="fw-bold">{{ user.name }}</td><td>{{ user.email }}</td><td><span class="badge text-bg-primary rounded-pill">{{ user.role }}</span></td><td>{{ user.created_at }}</td><td>{% for permission in user.permissions_list %}<span class="badge badge-soft-secondary rounded-pill ms-1">{{ permission }}</span>{% else %}<span class="text-secondary">غير محددة</span>{% endfor %}</td></tr>
+  {% else %}<tr><td colspan="5" class="text-center text-secondary py-5">لا يوجد مستخدمون مسجلون</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+<div class="card rounded-3 p-4"><h2 class="h5 fw-bold mb-3">سجل محاولات الدخول</h2><div class="table-responsive"><table class="table align-middle"><thead><tr><th>المستخدم</th><th>عنوان IP</th><th>التاريخ والوقت</th><th>الحالة</th></tr></thead><tbody>
+{% for row in history %}<tr><td>{{ row.user_name }}</td><td><code>{{ row.ip_address }}</code></td><td>{{ row.logged_at }}</td><td><span class="badge rounded-pill {% if row.status in ['نجاح','success'] %}badge-soft-success{% else %}badge-soft-danger{% endif %}">{{ row.status }}</span></td></tr>{% else %}<tr><td colspan="4" class="text-center text-secondary py-4">لا توجد محاولات دخول مسجلة</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-3 border-0"><div class="modal-header"><h5 class="modal-title">إضافة مستخدم</h5><button class="btn-close ms-0" data-bs-dismiss="modal" aria-label="إغلاق"></button></div><div class="modal-body"><form id="userForm">
+  <div class="mb-3"><label for="userName" class="form-label">الاسم</label><input id="userName" class="form-control" required></div>
+  <div class="mb-3"><label for="userEmail" class="form-label">البريد الإلكتروني</label><input id="userEmail" type="email" class="form-control" required></div>
+  <div class="mb-3"><label for="userRole" class="form-label">الدور</label><select id="userRole" class="form-select"><option>مدير</option><option>مشرف</option><option>مراقب</option></select></div>
+  <fieldset class="mb-3"><legend class="form-label fs-6">الصلاحيات</legend><div class="row g-2">{% for permission in ['إدارة المشتركين','إدارة الخطط','إدارة المستخدمين','عرض التقارير'] %}<div class="col-6"><label class="form-check"><input class="form-check-input permission-check" type="checkbox" value="{{ permission }}"><span class="form-check-label">{{ permission }}</span></label></div>{% endfor %}</div></fieldset>
+  <button class="btn btn-primary w-100">حفظ المستخدم</button>
+</form></div></div></div></div>
+{% endblock %}
+{% block scripts %}<script>
+document.getElementById('userForm').addEventListener('submit', async (event) => { event.preventDefault(); const permissions = Array.from(document.querySelectorAll('.permission-check:checked')).map(input => input.value); const result = await postJson('/api/admin/users', {name:document.getElementById('userName').value, email:document.getElementById('userEmail').value, role:document.getElementById('userRole').value, permissions}); if (result) location.reload(); });
+</script>{% endblock %}

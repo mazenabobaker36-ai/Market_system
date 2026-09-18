@@ -34,8 +34,12 @@ jobs:
       - name: Build Executables with PyInstaller
         working-directory: supermarket_pos
         run: |
-          pyinstaller --noconfirm --clean supermarket_pos.spec
-          pyinstaller --noconfirm --clean --onefile --windowed --name updater updater/updater.py
+          # Build the main onedir application first so its bundled assets are included.
+          pyinstaller --noconfirm --clean --onedir --windowed --name "supermarket_pos" supermarket_pos.spec
+
+          # Build the updater before Inno Setup runs. This produces dist\updater.exe.
+          pyinstaller --noconfirm --clean --onefile --windowed --name "updater" updater/updater.py
+
           if (!(Test-Path "dist\supermarket_pos\supermarket_pos.exe")) {
             throw "Main application executable was not generated at supermarket_pos\dist\supermarket_pos\supermarket_pos.exe"
           }

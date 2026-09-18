@@ -1,14 +1,15 @@
 import sys
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import QApplication
 
 from database.db_manager import DBManager
-from ui.main_window import MainWindow
+from licensing.manager import LicenseManager
+from licensing.ui import ActivationDialog
 from ui.login_dialog import LoginDialog
+from ui.main_window import MainWindow
 from ui.theme import apply_bootstrap_theme
-from licensing import ActivationDialog, LicenseManager
-from updater import UpdateDialog
+from updater.ui import UpdateDialog
 from utils.store_config import load_store_name
 
 
@@ -17,6 +18,7 @@ CURRENT_VERSION = "1.0.0"
 
 def main():
     app = QApplication(sys.argv)
+    # Arabic is the application’s default language and reading direction.
     app.setLayoutDirection(Qt.RightToLeft)
     apply_bootstrap_theme(app)
 
@@ -60,7 +62,7 @@ def main():
         store_name=load_store_name(),
     )
     # keep a persistent reference on the QApplication so the window isn't garbage-collected
-    setattr(app, "_main_window", window)
+    app._main_window = window
 
     # ensure login dialog is fully closed and scheduled for deletion so it doesn't interfere
     try:
@@ -75,7 +77,6 @@ def main():
         # raise and activate to ensure it becomes visible on top of other windows/dialogs
         window.raise_()
         window.activateWindow()
-        from PyQt5.QtCore import QTimer
         QTimer.singleShot(100, lambda: (window.raise_(), window.activateWindow()))
     except Exception:
         pass

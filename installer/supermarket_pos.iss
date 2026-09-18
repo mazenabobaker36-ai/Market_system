@@ -22,12 +22,12 @@ OutputBaseFilename=Supermarket_POS_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\assets\app_icon.ico
+UninstallDisplayIcon={app}\supermarket_pos.exe
 ; Per-user install: avoids requiring Administrator privileges and prevents permission issues
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 ArchitecturesInstallIn64BitMode=x64
-UninstallDisplayIcon={app}\{#MyAppExeName}
-
 [Languages]
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -36,10 +36,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; Copy all compiled files from PyInstaller's onedir dist directory
+; Paths are relative to this script (installer\), and PyInstaller runs in supermarket_pos\.
+; Main app folder contents
 Source: "..\supermarket_pos\dist\supermarket_pos\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Detached updater helper; this executable is built separately and never touches AppData
+; Updater executable (PyInstaller --onefile output: supermarket_pos\dist\updater.exe)
 Source: "..\supermarket_pos\dist\updater.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; Shared installer icon used by shortcuts and the installed application folder.
+Source: "..\assets\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 ; Persistent application configuration and database directories.
@@ -48,9 +51,9 @@ Name: "{userappdata}\MySupermarketPOS"; Permissions: users-full
 Name: "{userappdata}\MySupermarketPOS\Data"; Permissions: users-full
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"; IconFilename: "{app}\app_icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

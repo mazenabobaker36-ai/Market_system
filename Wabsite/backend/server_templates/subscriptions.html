@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}المشتركون | منصة الاشتراكات{% endblock %}
+{% block page_heading %}المشتركون{% endblock %}
+{% block content %}
+<div class="card rounded-3 p-4">
+  <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-4">
+    <div><h2 class="h5 fw-bold mb-1">إدارة الاشتراكات</h2><div class="text-secondary small">متابعة المتاجر والتراخيص وخططهم الحالية</div></div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#subscriberModal">＋ إضافة مشترك جديد</button>
+  </div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr>
+    <th>معرّف المتجر</th><th>اسم المتجر</th><th>المالك</th><th>الهاتف</th><th>الخطة</th><th>تاريخ الانتهاء</th><th>الحالة</th><th>الإجراءات</th>
+  </tr></thead><tbody>
+  {% for store in stores %}<tr>
+    <td><code>{{ store.store_id }}</code></td><td class="fw-bold">{{ store.store_name }}</td><td>{{ store.owner_name or '-' }}</td><td>{{ store.phone or '-' }}</td><td>{{ store.plan_name or 'غير محددة' }}</td><td>{{ store.subscription_end }}</td>
+    <td><span class="badge rounded-pill {% if store.status=='active' %}badge-soft-success{% elif store.status=='blocked' %}badge-soft-danger{% else %}badge-soft-warning{% endif %}">{{ store.status_label }}</span></td>
+    <td><div class="d-flex gap-2"><form method="post" action="/admin/subscriptions/{{ store.store_id }}/extend"><button class="btn btn-sm btn-outline-success">تجديد</button></form>{% if store.status != 'blocked' %}<form method="post" action="/admin/subscriptions/{{ store.store_id }}/block"><button class="btn btn-sm btn-outline-danger">إيقاف</button></form>{% endif %}<button class="btn btn-sm btn-outline-secondary" onclick="generateKey('{{ store.store_id }}')">مفتاح جديد</button></div></td>
+  </tr>{% else %}<tr><td colspan="8" class="text-center text-secondary py-5">لا توجد اشتراكات مسجلة</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+<div class="modal fade" id="subscriberModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-3 border-0"><div class="modal-header"><h5 class="modal-title fw-bold">إضافة مشترك جديد</h5><button class="btn-close ms-0" data-bs-dismiss="modal" aria-label="إغلاق"></button></div><div class="modal-body"><form id="subscriberForm">
+  <div class="mb-3"><label for="storeName" class="form-label">اسم المتجر</label><input id="storeName" class="form-control" required></div>
+  <div class="mb-3"><label for="ownerName" class="form-label">اسم المالك</label><input id="ownerName" class="form-control"></div>
+  <div class="mb-3"><label for="phone" class="form-label">رقم الهاتف</label><input id="phone" class="form-control"></div>
+  <div class="mb-3"><label for="planId" class="form-label">خطة الاشتراك</label><select id="planId" class="form-select" required>{% for plan in plans %}<option value="{{ plan.id }}">{{ plan.name }} — {{ plan.monthly_price }} شهرياً</option>{% endfor %}</select></div>
+  <div class="mb-3"><label for="days" class="form-label">مدة الاشتراك بالأيام</label><input id="days" type="number" value="30" min="1" class="form-control"></div>
+  <button class="btn btn-primary w-100">إنشاء المتجر والتفعيل</button>
+</form></div></div></div></div>
+{% endblock %}
+{% block scripts %}<script>
+document.getElementById('subscriberForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const result = await postJson('/api/admin/subscriptions', {
+    store_name: document.getElementById('storeName').value,
+    owner_name: document.getElementById('ownerName').value,
+    phone: document.getElementById('phone').value,
+    plan_id: Number(document.getElementById('planId').value),
+    days: Number(document.getElementById('days').value)
+  });
+  if (result) { alert('تم إنشاء المشترك\nمعرّف المتجر: ' + result.store_id + '\nمفتاح الترخيص: ' + result.license_key); location.reload(); }
+});
+async function generateKey(storeId) { const response = await fetch('/api/v1/stores/' + encodeURIComponent(storeId) + '/generate-license', {method:'POST'}); const data = await response.json(); if (response.ok) alert('معرّف المتجر: ' + data.store_id + '\nمفتاح الترخيص: ' + data.license_key); else alert(data.detail || 'تعذر إنشاء المفتاح'); }
+</script>{% endblock %}

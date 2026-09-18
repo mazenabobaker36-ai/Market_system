@@ -53,7 +53,7 @@ class CashierWindow(QMainWindow):
         self.stock_tab = StockWindow(self.db)
 
         self.tabs.addTab(self.pos_tab, "الكاشير")
-        self.tabs.addTab(self.dashboard_tab, "Dashboard")
+        self.tabs.addTab(self.dashboard_tab, "لوحة التحكم")
         self.tabs.addTab(self.customer_tab, "العملاء")
         self.tabs.addTab(self.stock_tab, "المخزون")
         self.tabs.addTab(self.reports_tab, "التقارير")
@@ -118,8 +118,8 @@ class CashierWindow(QMainWindow):
         # Cart Table
         self.cart_table = QTableWidget(0, 6)
         self.cart_table.setHorizontalHeaderLabels([
-            "Product ID",
-            "Barcode",
+            "معرف المنتج",
+            "الباركوود",
             "الاسم",
             "الكمية",
             "السعر",
@@ -196,25 +196,25 @@ class CashierWindow(QMainWindow):
 
         products_card, self.products_count_label = self._create_stat_card(
             icon_text="📦",
-            title_text="Total Products",
+            title_text="إجمالي المنتجات",
             value_text="0",
             variant="products",
         )
         customers_card, self.customers_count_label = self._create_stat_card(
             icon_text="👥",
-            title_text="Total Customers",
+            title_text="إجمالي العملاء",
             value_text="0",
             variant="customers",
         )
         sales_card, self.sales_today_label = self._create_stat_card(
             icon_text="💰",
-            title_text="Today's Sales",
+            title_text="مبيعات اليوم",
             value_text="0.00",
             variant="sales",
         )
         invoices_card, self.invoices_today_label = self._create_stat_card(
             icon_text="🧾",
-            title_text="Today's Invoices",
+            title_text="فواتير اليوم",
             value_text="0",
             variant="invoices",
         )
@@ -343,7 +343,7 @@ class CashierWindow(QMainWindow):
 
         self.expiry_table = QTableWidget(0, 5)
         self.expiry_table.setHorizontalHeaderLabels([
-            "Barcode",
+            "الباركوود",
             "الاسم",
             "المخزون",
             "تاريخ الانتهاء",
@@ -362,7 +362,7 @@ class CashierWindow(QMainWindow):
             "تسجيل الدخول",
             "تسجيل الخروج",
             "الحالة",
-            "ID",
+            "المعرف",
         ])
 
         login_layout.addWidget(login_refresh_btn)

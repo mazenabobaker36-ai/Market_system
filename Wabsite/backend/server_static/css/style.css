@@ -1,0 +1,20 @@
+:root { --navy:#0f172a; --primary:#2563eb; --surface:#f8fafc; }
+body { background:var(--surface); font-family:"Tajawal",sans-serif; color:#1e293b; }
+.sidebar { min-height:100vh; background:linear-gradient(180deg,#0f172a,#172554); }
+.brand { color:#fff; font-size:1.25rem; font-weight:800; }
+.nav-link { color:#cbd5e1; border-radius:.8rem; padding:.75rem 1rem; }
+.nav-link:hover,.nav-link.active { background:#2563eb; color:#fff; }
+.content { min-height:100vh; }
+.card { border:0; box-shadow:0 .35rem 1.25rem rgba(15,23,42,.06); }
+.rounded-3 { border-radius:1rem!important; }
+.stat-icon { width:46px; height:46px; display:grid; place-items:center; border-radius:1rem; font-size:1.3rem; }
+.metric-value { font-size:1.8rem; font-weight:800; }
+.table th { color:#64748b; font-size:.82rem; white-space:nowrap; }
+.badge-soft-success { color:#166534; background:#dcfce7; }
+.badge-soft-warning { color:#92400e; background:#fef3c7; }
+.badge-soft-danger { color:#991b1b; background:#fee2e2; }
+.badge-soft-secondary { color:#334155; background:#e2e8f0; }
+.plan-card { transition:transform .2s,box-shadow .2s; }
+.plan-card:hover { transform:translateY(-4px); box-shadow:0 .75rem 2rem rgba(37,99,235,.14); }
+.feature-list { min-height:115px; }
+@media(max-width:991px) { .sidebar { min-height:auto; } .content { min-height:auto; } }

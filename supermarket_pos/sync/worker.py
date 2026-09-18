@@ -1,11 +1,13 @@
 import os
-import time
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
-from database.db_manager import DBManager
+try:
+    from ..database.db_manager import DBManager
+except ImportError:  # Supports PyInstaller's script-style package layout.
+    from database.db_manager import DBManager
 
 
 class SyncWorker(QThread):
@@ -27,13 +29,13 @@ class SyncWorker(QThread):
         base_url: str = "https://preeminent-truffle-0ea26e.netlify.app/api/v1",
         batch_size: int = 50,
         sync_interval_seconds: int = 15 * 60,
-        parent=None,
-    ):
+        parent: Optional[QObject] = None,
+    ) -> None:
         super().__init__(parent)
         self.db = db
         self.store_id = store_id.strip()
         self.token = token.strip()
-        self.base_url = os.environ.get("POS_SYNC_BASE_URL", base_url).rstrip("/")
+        self.base_url = os.environ.get("POS_SYNC_BASE_URL", os.environ.get("API_BASE_URL", base_url)).rstrip("/")
         self.batch_size = max(1, int(batch_size))
         self.sync_interval_seconds = max(1, int(sync_interval_seconds))
         self._stopping = False
@@ -79,7 +81,7 @@ class SyncWorker(QThread):
                 return
             self.msleep(1000)
 
-    def run(self):
+    def run(self) -> None:
         while not self._stopping and not self.isInterruptionRequested():
             try:
                 synced = self._sync_sales()
@@ -94,6 +96,6 @@ class SyncWorker(QThread):
                 self._wait(self._backoff_seconds)
                 self._backoff_seconds = min(self._backoff_seconds * 2, 30 * 60)
 
-    def stop(self):
+    def stop(self) -> None:
         self._stopping = True
         self.requestInterruption()

@@ -25,8 +25,8 @@ def get_data_dir() -> Path:
     """
     if sys.platform == "win32":
         root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
-        return root / "SupermarketPOS" / "Data"
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "supermarket_pos" / "Data"
+        return root / "MySupermarketPOS" / "Data"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "MySupermarketPOS" / "Data"
 
 
 def resolve_database_path(app_name: str = "MySupermarketPOS") -> Path:

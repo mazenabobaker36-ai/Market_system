@@ -32,7 +32,8 @@ class LicenseManager:
 
     def __init__(self, path: Optional[Path] = None, verify_url: Optional[str] = None):
         self.path = path or (DATA_DIR / "license.dat")
-        self.verify_url = verify_url or os.environ.get("POS_LICENSE_VERIFY_URL", self.VERIFY_URL)
+        default_verify_url = f"{os.environ.get('API_BASE_URL', 'https://preeminent-truffle-0ea26e.netlify.app/api/v1').rstrip('/')}/license/verify"
+        self.verify_url = verify_url or os.environ.get("POS_LICENSE_VERIFY_URL", default_verify_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @staticmethod

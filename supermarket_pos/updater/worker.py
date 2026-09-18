@@ -27,7 +27,7 @@ class UpdateWorker(QThread):
         super().__init__(parent)
         self.store_id = store_id.strip()
         self.current_version = current_version
-        self.base_url = os.environ.get("POS_UPDATE_BASE_URL", base_url).rstrip("/")
+        self.base_url = os.environ.get("POS_UPDATE_BASE_URL", os.environ.get("API_BASE_URL", base_url)).rstrip("/")
 
     def _version_info(self) -> Dict[str, Any]:
         response = requests.get(
@@ -45,7 +45,9 @@ class UpdateWorker(QThread):
         self.checking.emit()
         try:
             info = self._version_info()
-            latest = str(info["latest_version"])
+            latest = str(info.get("latest_version") or info.get("version") or "")
+            if not latest:
+                raise ValueError("Version service did not return a version")
             if not is_newer(latest, self.current_version):
                 self.no_update.emit(latest)
                 return
