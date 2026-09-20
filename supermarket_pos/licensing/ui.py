@@ -43,13 +43,35 @@ class ActivationDialog(QDialog):
         self.activate_btn = QPushButton("تفعيل")
         self.activate_btn.setProperty("variant", "primary")
         self.activate_btn.clicked.connect(self.activate)
+        self.guest_btn = QPushButton("تجربة كضيف (3 أيام)")
+        self.guest_btn.setProperty("variant", "outline")
+        self.guest_btn.clicked.connect(self.continue_as_guest)
         form.addRow(title)
         form.addRow(subtitle)
         form.addRow("Store ID:", self.store_input)
         form.addRow("License Key:", self.key_input)
         form.addRow(self.status_label)
         form.addRow(self.activate_btn)
+        form.addRow(self.guest_btn)
         layout.addWidget(card)
+
+    def continue_as_guest(self):
+        try:
+            state = self.manager.guest_trial_state()
+        except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
+            QMessageBox.critical(self, "تعذر تشغيل التجربة", f"تعذر حفظ بيانات التجربة: {exc}")
+            return
+
+        if state.status == "guest":
+            self.activated.emit(state)
+            self.accept()
+            return
+
+        QMessageBox.warning(
+            self,
+            "انتهت التجربة المجانية",
+            "انتهت مدة التجربة المجانية. يرجى إدخال ترخيص صالح أو الاشتراك للمتابعة.",
+        )
 
     def activate(self):
         store_id, license_key = self.store_input.text().strip(), self.key_input.text().strip()
@@ -90,7 +112,7 @@ class LicenseLockOverlay(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         title = QLabel("🔒 الوصول مقفل")
         title.setStyleSheet("color: white; font-size: 30px; font-weight: 900;")
-        message = QLabel("عذراً، انتهت مدة الاشتراك الشهري. يرجى التجديد عبر لوحة التحكم")
+        message = QLabel("عذراً، انتهت مدة الترخيص أو التجربة. يرجى إدخال ترخيص صالح أو الاشتراك للمتابعة.")
         message.setAlignment(Qt.AlignCenter)
         message.setStyleSheet("color: #e2e8f0; font-size: 18px;")
         layout.addWidget(title)

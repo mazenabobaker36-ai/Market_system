@@ -32,13 +32,20 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, UnicodeError):
         local_license_available = False
 
+    guest_mode = False
+    guest_days_remaining = 0
     if not local_license_available:
         activation = ActivationDialog(license_manager)
+        activation_state = []
+        activation.activated.connect(activation_state.append)
         if activation.exec_() != ActivationDialog.Accepted:
             sys.exit(0)
+        if activation_state and activation_state[0].status == "guest":
+            guest_mode = True
+            guest_days_remaining = license_manager.guest_trial_days_remaining()
 
     credentials = license_manager.stored_credentials()
-    if credentials:
+    if credentials and not guest_mode:
         update_dialog = UpdateDialog(credentials[0], CURRENT_VERSION)
         update_dialog.start()
         if update_dialog.exec_() == UpdateDialog.Accepted:
@@ -60,6 +67,8 @@ def main():
         login.login_history_id,
         license_manager,
         store_name=load_store_name(),
+        guest_mode=guest_mode,
+        guest_days_remaining=guest_days_remaining,
     )
     # keep a persistent reference on the QApplication so the window isn't garbage-collected
     app._main_window = window

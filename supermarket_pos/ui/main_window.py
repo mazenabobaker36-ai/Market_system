@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import QDate, QSize, QSizeF, Qt
+from PyQt5.QtCore import QDate, QTimer, QSize, QSizeF, Qt
 from datetime import datetime, date, timedelta
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QTextDocument
 from PyQt5.QtPrintSupport import QPrintDialog, QPrinter, QPrinterInfo
@@ -260,6 +260,8 @@ class MainWindow(QMainWindow):
         login_history_id=None,
         license_manager=None,
         store_name="سوبرماركت الخير",
+        guest_mode=False,
+        guest_days_remaining=0,
     ):
         super().__init__()
         self.db = db
@@ -267,6 +269,9 @@ class MainWindow(QMainWindow):
         self.login_history_id = login_history_id
         self.license_manager = license_manager or LicenseManager()
         self.store_name = store_name.strip() or "سوبرماركت الخير"
+        self.guest_mode = bool(guest_mode)
+        self.guest_days_remaining = int(guest_days_remaining)
+        self.guest_trial_timer = None
         self.license_worker = None
         self.license_overlay = None
         self.sync_worker = None
@@ -313,6 +318,8 @@ class MainWindow(QMainWindow):
         self._apply_role_permissions()
         self._start_license_heartbeat()
         self._start_data_sync()
+        if self.guest_mode:
+            self._start_guest_trial_monitor()
 
         # Launch window maximized by default for responsive screen support
         self.showMaximized()
@@ -335,6 +342,9 @@ class MainWindow(QMainWindow):
         self.refresh_reports()
 
     def _start_license_heartbeat(self):
+        if self.guest_mode:
+            self._set_license_locked(False)
+            return
         credentials = self.license_manager.stored_credentials()
         if not credentials:
             self._set_license_locked(True)
@@ -350,6 +360,8 @@ class MainWindow(QMainWindow):
         self.license_worker.start()
 
     def _start_data_sync(self):
+        if self.guest_mode:
+            return
         credentials = self.license_manager.stored_credentials()
         if not credentials:
             return
@@ -359,6 +371,28 @@ class MainWindow(QMainWindow):
             token=self.license_manager.stored_token(),
         )
         self.sync_worker.start()
+
+    def _start_guest_trial_monitor(self):
+        self._update_guest_banner()
+        self.guest_trial_timer = QTimer(self)
+        self.guest_trial_timer.timeout.connect(self._update_guest_banner)
+        self.guest_trial_timer.start(60 * 1000)
+
+    def _update_guest_banner(self):
+        try:
+            self.guest_days_remaining = self.license_manager.guest_trial_days_remaining()
+        except (OSError, ValueError, TypeError, KeyError, UnicodeError):
+            self.guest_days_remaining = 0
+        if self.guest_days_remaining <= 0:
+            self._set_license_locked(True)
+            if self.guest_trial_timer is not None:
+                self.guest_trial_timer.stop()
+            return
+        self._set_license_locked(False)
+        if hasattr(self, "guest_banner"):
+            self.guest_banner.setText(
+                f"وضع الضيف التجريبي - متبقي {self.guest_days_remaining} أيام للاشتراك الكامل"
+            )
 
     def _set_license_locked(self, locked):
         if locked:
@@ -489,6 +523,16 @@ class MainWindow(QMainWindow):
         self.content = QFrame()
         content_layout = QVBoxLayout(self.content)
         content_layout.setContentsMargins(12, 12, 12, 12)
+
+        self.guest_banner = QLabel()
+        self.guest_banner.setObjectName("guestTrialBanner")
+        self.guest_banner.setAlignment(Qt.AlignCenter)
+        self.guest_banner.setStyleSheet(
+            "background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; "
+            "border-radius: 8px; padding: 8px; font-weight: 700;"
+        )
+        self.guest_banner.setVisible(self.guest_mode)
+        content_layout.addWidget(self.guest_banner)
 
         self.pages = QStackedWidget()
         content_layout.addWidget(self.pages)
@@ -771,6 +815,8 @@ class MainWindow(QMainWindow):
                     new_login_history_id,
                     self.license_manager,
                     self.store_name,
+                    guest_mode=self.guest_mode,
+                    guest_days_remaining=self.guest_days_remaining,
                 )
                 mw.show()
                 self.close()

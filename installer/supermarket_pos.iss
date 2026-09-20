@@ -5,7 +5,7 @@
 
 #define MyAppName "Supermarket POS"
 #define MyAppVersion "1.0.0"
-#define MyAppPublisher "Supermarket POS"
+#define MyAppPublisher "Market System"
 #define MyAppExeName "supermarket_pos.exe"
 
 [Setup]
@@ -15,7 +15,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://preeminent-truffle-0ea26e.netlify.app/
-DefaultDirName={localappdata}\Programs\{#MyAppName}
+DefaultDirName={autopf}\SupermarketPOS
 DefaultGroupName={#MyAppName}
 OutputDir=..\dist_installer
 OutputBaseFilename=Supermarket_POS_Setup
@@ -24,8 +24,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\assets\app_icon.ico
 UninstallDisplayIcon={app}\supermarket_pos.exe
-; Per-user install: avoids requiring Administrator privileges and prevents permission issues
-PrivilegesRequired=lowest
+; Install to Program Files for a standard machine-wide Windows installation.
+PrivilegesRequired=admin
 DisableProgramGroupPage=yes
 ArchitecturesInstallIn64BitMode=x64
 [Languages]
@@ -51,7 +51,7 @@ Name: "{userappdata}\MySupermarketPOS"; Permissions: users-full
 Name: "{userappdata}\MySupermarketPOS\Data"; Permissions: users-full
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
+Name: "{autoprograms}\Supermarket POS"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"; IconFilename: "{app}\app_icon.ico"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 

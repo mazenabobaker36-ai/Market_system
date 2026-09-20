@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -28,10 +29,12 @@ class LicenseManager:
 
     VERIFY_URL = "https://preeminent-truffle-0ea26e.netlify.app/api/v1/license/verify"
     OFFLINE_GRACE_SECONDS = 3 * 24 * 60 * 60
+    TRIAL_DAYS = 3
     REQUEST_TIMEOUT = 15
 
     def __init__(self, path: Optional[Path] = None, verify_url: Optional[str] = None):
         self.path = path or (DATA_DIR / "license.dat")
+        self.trial_info_path = self.path.parent.parent / "trial_info.json"
         default_verify_url = f"{os.environ.get('API_BASE_URL', 'https://preeminent-truffle-0ea26e.netlify.app/api/v1').rstrip('/')}/license/verify"
         self.verify_url = verify_url or os.environ.get("POS_LICENSE_VERIFY_URL", default_verify_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +95,34 @@ class LicenseManager:
     def has_local_license(self) -> bool:
         data = self._read()
         return bool(data.get("store_id") and data.get("license_key") and data.get("token"))
+
+    def guest_trial_days_remaining(self) -> int:
+        """Create/read the per-machine guest trial and return whole days remaining."""
+        today = date.today()
+        first_launch: date
+        try:
+            info = json.loads(self.trial_info_path.read_text(encoding="utf-8"))
+            first_launch = date.fromisoformat(str(info["first_launch_date"]))
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            first_launch = today
+            self.trial_info_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"first_launch_date": first_launch.isoformat()}
+            temp_path = self.trial_info_path.with_suffix(".tmp")
+            try:
+                temp_path.write_text(json.dumps(payload), encoding="utf-8")
+                os.replace(temp_path, self.trial_info_path)
+            except OSError:
+                temp_path.unlink(missing_ok=True)
+                raise
+
+        elapsed_days = max(0, (today - first_launch).days)
+        return self.TRIAL_DAYS - elapsed_days
+
+    def guest_trial_state(self) -> LicenseState:
+        remaining = self.guest_trial_days_remaining()
+        if remaining > 0:
+            return LicenseState("guest", f"{remaining} days remaining")
+        return LicenseState("guest_expired", "Guest trial expired")
 
     def verify(self, store_id: str, license_key: str) -> LicenseState:
         payload = {
