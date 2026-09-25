@@ -1,18 +1,46 @@
 const API_BASE = '/api/v1';
 const ADMIN_API_BASE = '/api/admin';
 
+function apiUrl(base, path) {
+  const cleanBase = String(base).replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  return `${cleanBase}/${cleanPath}`;
+}
+
+function storedAuthToken() {
+  try {
+    return window.localStorage.getItem('auth_token') || window.localStorage.getItem('access_token') || '';
+  } catch (_) {
+    return '';
+  }
+}
+
 async function requestFrom(base, path, options = {}) {
-  const response = await fetch(`${base}/${String(path).replace(/^\//, '')}`, {
-    ...options,
-    headers: {
-      Accept: 'application/json',
-      ...(options.body ? {'Content-Type': 'application/json'} : {}),
-      ...(options.headers || {})
-    }
-  });
+  const headers = new Headers(options.headers || {});
+  headers.set('Accept', 'application/json');
+  if (options.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const token = storedAuthToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  let response;
+  try {
+    response = await fetch(apiUrl(base, path), {
+      ...options,
+      headers,
+      credentials: 'same-origin'
+    });
+  } catch (_) {
+    throw new Error('تعذر الاتصال بالخادم');
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.detail || 'تعذر الاتصال بالخادم');
+    const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`;
+    throw new Error(`تعذر الاتصال بالخادم: ${detail}`);
   }
   return data;
 }

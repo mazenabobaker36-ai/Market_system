@@ -1,16 +1,15 @@
 [build]
   publish = "frontend"
 
-# Replace your-pos-api.onrender.com with the actual public FastAPI hostname if different.
 [[redirects]]
   from = "/api/v1/*"
-  to = "https://your-pos-api.onrender.com/api/v1/:splat"
+  to = "https://marketsystem-production.up.railway.app/api/v1/:splat"
   status = 200
   force = true
 
 [[redirects]]
   from = "/api/admin/*"
-  to = "https://your-pos-api.onrender.com/api/admin/:splat"
+  to = "https://marketsystem-production.up.railway.app/api/admin/:splat"
   status = 200
   force = true
 
