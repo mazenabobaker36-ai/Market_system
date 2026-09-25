@@ -2,14 +2,8 @@
   publish = "frontend"
 
 [[redirects]]
-  from = "/api/v1/*"
-  to = "https://marketsystem-production.up.railway.app/api/v1/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/admin/*"
-  to = "https://marketsystem-production.up.railway.app/api/admin/:splat"
+  from = "/api/*"
+  to = "https://marketsystem-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
@@ -17,3 +11,4 @@
   from = "/*"
   to = "/index.html"
   status = 200
+  force = true
