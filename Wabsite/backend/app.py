@@ -28,8 +28,11 @@ BASE_URL = os.getenv(
     "API_BASE_URL",
     "https://preeminent-truffle-0ea26e.netlify.app/api/v1",
 ).rstrip("/")
-ROOT = Path(__file__).resolve().parent.parent
-templates = Jinja2Templates(directory=str(ROOT / "backend" / "server_templates"))
+BACKEND_DIR = Path(__file__).resolve().parent
+ROOT = BACKEND_DIR.parent
+TEMPLATE_DIR = BACKEND_DIR / "server_templates"
+STATIC_DIR = BACKEND_DIR / "server_static"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR)) if TEMPLATE_DIR.is_dir() else None
 app = FastAPI(title="Supermarket POS Subscription API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +45,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=str(ROOT / "backend" / "server_static")), name="static")
+# The Netlify frontend does not require server-side static files. Mount the
+# directory only when an optional server-rendered deployment includes it.
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def render_template(template_name: str, context: dict[str, Any]):
+    if templates is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Server-rendered templates are not installed; use the Netlify frontend.",
+        )
+    return templates.TemplateResponse(template_name, context)
 
 
 def key_hash(value: str) -> str:
@@ -127,7 +142,7 @@ def startup() -> None:
 def dashboard(request: Request, connection: sqlite3.Connection = Depends(db_connection)):
     context = dashboard_context(connection)
     context.update({"request": request, "page": "dashboard"})
-    return templates.TemplateResponse("home.html", context)
+    return render_template("home.html", context)
 
 
 @app.get("/admin/subscriptions", response_class=HTMLResponse)
@@ -135,7 +150,7 @@ def subscriptions(request: Request, connection: sqlite3.Connection = Depends(db_
     plans = [dict(row) for row in connection.execute("SELECT * FROM plans WHERE active = 1 ORDER BY monthly_price")]
     for plan in plans:
         plan["features_list"] = json.loads(plan["features"] or "[]")
-    return templates.TemplateResponse(
+    return render_template(
         "subscriptions.html",
         {"request": request, "page": "subscriptions", "stores": store_rows(connection), "plans": plans},
     )
@@ -194,7 +209,7 @@ def plans_page(request: Request, connection: sqlite3.Connection = Depends(db_con
     plans = [dict(row) for row in connection.execute("SELECT * FROM plans ORDER BY monthly_price")]
     for plan in plans:
         plan["features_list"] = json.loads(plan["features"] or "[]")
-    return templates.TemplateResponse("plans.html", {"request": request, "page": "plans", "plans": plans})
+    return render_template("plans.html", {"request": request, "page": "plans", "plans": plans})
 
 
 
@@ -216,7 +231,7 @@ def users_page(request: Request, connection: sqlite3.Connection = Depends(db_con
     for user in users:
         user["permissions_list"] = json.loads(user["permissions"] or "[]")
     history = [dict(row) for row in connection.execute("SELECT * FROM login_history ORDER BY logged_at DESC LIMIT 50")]
-    return templates.TemplateResponse(
+    return render_template(
         "users.html", {"request": request, "page": "users", "users": users, "history": history}
     )
 
