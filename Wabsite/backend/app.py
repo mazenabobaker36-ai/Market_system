@@ -13,8 +13,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .database import connection as db_connection, init_db
-from .models import (
+from database import connection as db_connection, init_db
+from models import (
     AdminUserCreateRequest,
     ExtendSubscriptionRequest,
     LicenseVerifyRequest,
