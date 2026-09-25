@@ -137,6 +137,10 @@ def dashboard_context(connection: sqlite3.Connection) -> dict[str, Any]:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    print("Registered FastAPI routes:")
+    for route in app.routes:
+        methods = ",".join(sorted(getattr(route, "methods", set()))) or "MOUNT"
+        print(f"  {methods:12} {route.path}")
 
 
 # ---------------------------------------------------------------------------
