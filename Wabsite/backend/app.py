@@ -51,6 +51,11 @@ if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.get("/")
+def read_root() -> dict[str, str]:
+    return {"status": "online", "message": "Market System API is running"}
+
+
 def render_template(template_name: str, context: dict[str, Any]):
     if templates is None:
         raise HTTPException(
